@@ -9,8 +9,9 @@ cython_test.cpp
 SymEngineConfig.cmake
 SymEngineConfigVersion.cmake
 SymEngineTargets.cmake
+cmake-build-*
 
-# cotire
+# Cotire
 symengine/cotire
 symengine/symengine_CXX_cotire.cmake
 
@@ -48,6 +49,7 @@ symengine/python/symengine/lib/config.pxi
 build*
 *__pycache__*
 *.pyc
+symengine/utilities/matchpycpp/autogen_tests/test_case*.py
 
 # Temp files
 *~
@@ -124,6 +126,7 @@ benchmarks/matrix_add1_ginac
 benchmarks/matrix_add2_ginac
 benchmarks/matrix_mul1_ginac
 benchmarks/matrix_mul2_ginac
+benchmarks/parsing
 benchmarks/series
 benchmarks/series_expansion_sincos
 benchmarks/symbench
@@ -142,7 +145,7 @@ benchmarks/series_expansion_sincos_flint
 benchmarks/ntheorybench
 benchmarks/symengine_bench
 
-#rubygem
+# Rubygem
 symengine/ruby/Gemfile.lock
 symengine/ruby/LICENSE
 symengine/ruby/*.bundle
@@ -154,3 +157,14 @@ symengine/ruby/ext/symengine/extconf.h
 symengine/ruby/notebooks/.ipynb_checkpoints/
 symengine/ruby/notebooks/Gemfile.lock
 symengine/ruby/callgrind.out.*
+
+# Files generated from cmake templates
+symengine/symengine_config.h
+symengine/symengine_config_cling.h
+
+# Jupyter artefacts
+.ipynb_checkpoints/
+
+# IDE related
+/.idea
+.*cache/

@@ -248,7 +248,7 @@ RCP<const Set> solve_poly(const RCP<const Basic> &f,
                           const RCP<const Set> &domain)
 {
 
-#if defined(HAVE_SYMENGINE_FLINT) and __FLINT_RELEASE > 20502
+#if defined(HAVE_SYMENGINE_FLINT) && __FLINT_RELEASE > 20502
     try {
         auto poly = from_basic<UIntPolyFlint>(f, sym);
         auto fac = factors(*poly);
@@ -270,7 +270,8 @@ RCP<const Set> solve_poly(const RCP<const Basic> &f,
         // Try next
     }
 #endif
-    auto uexp = from_basic<UExprPoly>(f, sym);
+    RCP<const Basic> gen = rcp_static_cast<const Basic>(sym);
+    auto uexp = from_basic<UExprPoly>(f, gen);
     auto degree = uexp->get_degree();
     if (degree <= 4) {
         return solve_poly_heuristics(extract_coeffs(uexp), domain);
@@ -579,10 +580,8 @@ vec_basic linsolve(const DenseMatrix &system, const vec_sym &syms)
 
 vec_basic linsolve(const vec_basic &system, const vec_sym &syms)
 {
-    DenseMatrix A, b;
     auto mat = linear_eqns_to_matrix(system, syms);
-    A = mat.first;
-    b = mat.second;
+    DenseMatrix A = mat.first, b = mat.second;
     return linsolve_helper(A, b);
 }
 
@@ -598,8 +597,9 @@ std::pair<DenseMatrix, DenseMatrix>
 linear_eqns_to_matrix(const vec_basic &equations, const vec_sym &syms)
 {
     auto size = numeric_cast<unsigned int>(syms.size());
-    DenseMatrix A(1, size);
-    vec_basic coeffs, bvec;
+    DenseMatrix A(numeric_cast<unsigned int>(equations.size()), size);
+    zeros(A);
+    vec_basic bvec;
 
     int row = 0;
     auto gens = get_set_from_vec(syms);
@@ -608,8 +608,6 @@ linear_eqns_to_matrix(const vec_basic &equations, const vec_sym &syms)
         index_of_sym[syms[i]] = i;
     }
     for (const auto &eqn : equations) {
-        coeffs.clear();
-        coeffs.resize(size);
         auto neqn = eqn;
         if (is_a<Equality>(*eqn)) {
             neqn = sub(down_cast<const Equality &>(*eqn).get_arg2(),
@@ -635,13 +633,12 @@ linear_eqns_to_matrix(const vec_basic &equations, const vec_sym &syms)
             if (not non_zero) {
                 rem = res;
             } else {
-                coeffs[index_of_sym[cursim]] = res;
+                A.set(row, index_of_sym[cursim], res);
             }
         }
         bvec.push_back(neg(rem));
-        A.row_insert(DenseMatrix(1, size, coeffs), ++row);
+        ++row;
     }
-    A.row_del(0);
     return std::make_pair(
         A, DenseMatrix(numeric_cast<unsigned int>(equations.size()), 1, bvec));
 }

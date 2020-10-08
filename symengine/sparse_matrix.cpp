@@ -1,6 +1,7 @@
 #include <numeric>
 #include <symengine/matrix.h>
 #include <symengine/add.h>
+#include <symengine/functions.h>
 #include <symengine/mul.h>
 #include <symengine/constants.h>
 #include <symengine/symengine_exception.h>
@@ -140,7 +141,7 @@ void CSRMatrix::set(unsigned i, unsigned j, const RCP<const Basic> &e)
         }
     }
 
-    if (neq(*e, *zero)) {
+    if (not is_zero(*e)) {
         if (k < row_end and j_[k] == j) {
             x_[k] = e;
         } else { // j_[k] > j or k is the last non-zero element
@@ -184,6 +185,16 @@ void CSRMatrix::mul_matrix(const MatrixBase &other, MatrixBase &result) const
     throw NotImplementedError("Not Implemented");
 }
 
+void CSRMatrix::elementwise_mul_matrix(const MatrixBase &other,
+                                       MatrixBase &result) const
+{
+    if (is_a<CSRMatrix>(result)) {
+        auto &o = down_cast<const CSRMatrix &>(other);
+        auto &r = down_cast<CSRMatrix &>(result);
+        csr_binop_csr_canonical(*this, o, r, mul);
+    }
+}
+
 // Add a scalar
 void CSRMatrix::add_scalar(const RCP<const Basic> &k, MatrixBase &result) const
 {
@@ -194,6 +205,22 @@ void CSRMatrix::add_scalar(const RCP<const Basic> &k, MatrixBase &result) const
 void CSRMatrix::mul_scalar(const RCP<const Basic> &k, MatrixBase &result) const
 {
     throw NotImplementedError("Not Implemented");
+}
+
+// Matrix conjugate
+void CSRMatrix::conjugate(MatrixBase &result) const
+{
+    if (is_a<CSRMatrix>(result)) {
+        auto &r = down_cast<CSRMatrix &>(result);
+        std::vector<unsigned> p(p_), j(j_);
+        vec_basic x(x_.size());
+        for (unsigned i = 0; i < x_.size(); ++i) {
+            x[i] = SymEngine::conjugate(x_[i]);
+        }
+        r = CSRMatrix(col_, row_, std::move(p), std::move(j), std::move(x));
+    } else {
+        throw NotImplementedError("Not Implemented");
+    }
 }
 
 // Matrix transpose
@@ -207,7 +234,7 @@ void CSRMatrix::transpose(MatrixBase &result) const
     }
 }
 
-CSRMatrix CSRMatrix::transpose() const
+CSRMatrix CSRMatrix::transpose(bool conjugate) const
 {
     const auto nnz = j_.size();
     std::vector<unsigned> p(col_ + 1, 0), j(nnz), tmp(col_, 0);
@@ -222,11 +249,26 @@ CSRMatrix CSRMatrix::transpose() const
             const auto ci = j_[i];
             const unsigned k = p[ci] + tmp[ci];
             j[k] = ri;
-            x[k] = x_[i];
+            if (conjugate) {
+                x[k] = SymEngine::conjugate(x_[i]);
+            } else {
+                x[k] = x_[i];
+            }
             tmp[ci]++;
         }
     }
     return CSRMatrix(col_, row_, std::move(p), std::move(j), std::move(x));
+}
+
+// Matrix conjugate transpose
+void CSRMatrix::conjugate_transpose(MatrixBase &result) const
+{
+    if (is_a<CSRMatrix>(result)) {
+        auto &r = down_cast<CSRMatrix &>(result);
+        r = this->transpose(true);
+    } else {
+        throw NotImplementedError("Not Implemented");
+    }
 }
 
 // Extract out a submatrix
@@ -264,6 +306,18 @@ void CSRMatrix::FFLU(MatrixBase &LU) const
 
 // Fraction free LDU factorization
 void CSRMatrix::FFLDU(MatrixBase &L, MatrixBase &D, MatrixBase &U) const
+{
+    throw NotImplementedError("Not Implemented");
+}
+
+// QR factorization
+void CSRMatrix::QR(MatrixBase &Q, MatrixBase &R) const
+{
+    throw NotImplementedError("Not Implemented");
+}
+
+// Cholesky decomposition
+void CSRMatrix::cholesky(MatrixBase &L) const
 {
     throw NotImplementedError("Not Implemented");
 }
@@ -422,7 +476,8 @@ CSRMatrix CSRMatrix::from_coo(unsigned row, unsigned col,
     return B;
 }
 
-CSRMatrix CSRMatrix::jacobian(const vec_basic &exprs, const vec_sym &x)
+CSRMatrix CSRMatrix::jacobian(const vec_basic &exprs, const vec_sym &x,
+                              bool diff_cache)
 {
     const unsigned nrows = static_cast<unsigned>(exprs.size());
     const unsigned ncols = static_cast<unsigned>(x.size());
@@ -434,8 +489,8 @@ CSRMatrix CSRMatrix::jacobian(const vec_basic &exprs, const vec_sym &x)
     for (unsigned ri = 0; ri < nrows; ++ri) {
         p.push_back(p.back());
         for (unsigned ci = 0; ci < ncols; ++ci) {
-            auto elem = exprs[ri]->diff(x[ci]);
-            if (neq(*elem, *zero)) {
+            auto elem = exprs[ri]->diff(x[ci], diff_cache);
+            if (not is_zero(*elem)) {
                 p.back()++;
                 j.push_back(ci);
                 elems.emplace_back(std::move(elem));
@@ -446,7 +501,8 @@ CSRMatrix CSRMatrix::jacobian(const vec_basic &exprs, const vec_sym &x)
                      std::move(elems));
 }
 
-CSRMatrix CSRMatrix::jacobian(const DenseMatrix &A, const DenseMatrix &x)
+CSRMatrix CSRMatrix::jacobian(const DenseMatrix &A, const DenseMatrix &x,
+                              bool diff_cache)
 {
     SYMENGINE_ASSERT(A.col_ == 1);
     SYMENGINE_ASSERT(x.col_ == 1);
@@ -458,7 +514,7 @@ CSRMatrix CSRMatrix::jacobian(const DenseMatrix &A, const DenseMatrix &x)
         }
         syms.push_back(rcp_static_cast<const Symbol>(dx));
     }
-    return CSRMatrix::jacobian(A.m_, syms);
+    return CSRMatrix::jacobian(A.m_, syms, diff_cache);
 }
 
 void csr_matmat_pass1(const CSRMatrix &A, const CSRMatrix &B, CSRMatrix &C)
@@ -533,7 +589,7 @@ void csr_matmat_pass2(const CSRMatrix &A, const CSRMatrix &B, CSRMatrix &C)
 
         for (unsigned jj = 0; jj < length; jj++) {
 
-            if (neq(*sums[head], *zero)) {
+            if (not is_zero(*sums[head])) {
                 C.j_[nnz] = head;
                 C.x_[nnz] = sums[head];
                 nnz++;
@@ -590,7 +646,7 @@ void csr_scale_rows(CSRMatrix &A, const DenseMatrix &X)
     SYMENGINE_ASSERT(A.row_ == X.nrows() and X.ncols() == 1);
 
     for (unsigned i = 0; i < A.row_; i++) {
-        if (eq(*(X.get(i, 0)), *zero))
+        if (is_zero(*X.get(i, 0)))
             throw SymEngineException("Scaling factor can't be zero");
         for (unsigned jj = A.p_[i]; jj < A.p_[i + 1]; jj++)
             A.x_[jj] = mul(A.x_[jj], X.get(i, 0));
@@ -607,7 +663,7 @@ void csr_scale_columns(CSRMatrix &A, const DenseMatrix &X)
     unsigned i;
 
     for (i = 0; i < A.col_; i++) {
-        if (eq(*(X.get(i, 0)), *zero))
+        if (is_zero(*X.get(i, 0)))
             throw SymEngineException("Scaling factor can't be zero");
     }
 
@@ -644,7 +700,7 @@ void csr_binop_csr_canonical(
 
             if (A_j == B_j) {
                 RCP<const Basic> result = bin_op(A.x_[A_pos], B.x_[B_pos]);
-                if (neq(*result, *zero)) {
+                if (not is_zero(*result)) {
                     C.j_.push_back(A_j);
                     C.x_.push_back(result);
                     nnz++;
@@ -653,7 +709,7 @@ void csr_binop_csr_canonical(
                 B_pos++;
             } else if (A_j < B_j) {
                 RCP<const Basic> result = bin_op(A.x_[A_pos], zero);
-                if (neq(*result, *zero)) {
+                if (not is_zero(*result)) {
                     C.j_.push_back(A_j);
                     C.x_.push_back(result);
                     nnz++;
@@ -662,7 +718,7 @@ void csr_binop_csr_canonical(
             } else {
                 // B_j < A_j
                 RCP<const Basic> result = bin_op(zero, B.x_[B_pos]);
-                if (neq(*result, *zero)) {
+                if (not is_zero(*result)) {
                     C.j_.push_back(B_j);
                     C.x_.push_back(result);
                     nnz++;
@@ -674,7 +730,7 @@ void csr_binop_csr_canonical(
         // tail
         while (A_pos < A_end) {
             RCP<const Basic> result = bin_op(A.x_[A_pos], zero);
-            if (neq(*result, *zero)) {
+            if (not is_zero(*result)) {
                 C.j_.push_back(A.j_[A_pos]);
                 C.x_.push_back(result);
                 nnz++;
@@ -683,7 +739,7 @@ void csr_binop_csr_canonical(
         }
         while (B_pos < B_end) {
             RCP<const Basic> result = bin_op(zero, B.x_[B_pos]);
-            if (neq(*result, *zero)) {
+            if (not is_zero(*result)) {
                 C.j_.push_back(B.j_[B_pos]);
                 C.x_.push_back(result);
                 nnz++;

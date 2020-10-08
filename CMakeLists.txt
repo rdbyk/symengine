@@ -1,14 +1,16 @@
 cmake_minimum_required(VERSION 2.8.5)
 
-set(CMAKE_USER_MAKE_RULES_OVERRIDE ${CMAKE_SOURCE_DIR}/cmake/UserOverride.cmake)
+set(CMAKE_USER_MAKE_RULES_OVERRIDE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/UserOverride.cmake)
 
 project(symengine)
+
 set(SYMENGINE_MAJOR_VERSION 0)
-set(SYMENGINE_MINOR_VERSION 3)
+set(SYMENGINE_MINOR_VERSION 6)
 set(SYMENGINE_PATCH_VERSION 0)
 set(SYMENGINE_VERSION ${SYMENGINE_MAJOR_VERSION}.${SYMENGINE_MINOR_VERSION}.${SYMENGINE_PATCH_VERSION})
 
-set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
+include(CheckCXXCompilerFlag)
 
 # Make sure that CMAKE_BUILD_TYPE is either Debug or Release:
 if (NOT CMAKE_BUILD_TYPE)
@@ -24,12 +26,6 @@ endif ()
 set(BUILD_FOR_DISTRIBUTION no
     CACHE BOOL "Building SymEngine for a distribution")
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    if (BUILD_FOR_DISTRIBUTION)
-        string(REPLACE "-march=native" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-    endif()
-endif()
-
 #Boost.multiprecision build segfaults if -O3 optimization is on
 #which it is by default for cmake Release mode. Remove -O3 from flags.
 if (("${INTEGER_CLASS}" MATCHES "boostmp") AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -38,14 +34,13 @@ endif()
 
 # Enable C++11 support in all compilers. SymEngine will not compile unless
 # the C++11 support is enabled.
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|Intel")
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|Intel|SunPRO")
     set(CXX11_OPTIONS "-std=c++11")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "PGI")
     # pgcpp
     set(CXX11_OPTIONS "--gnu --c++11 -D__GXX_EXPERIMENTAL_CXX0X__")
 endif ()
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${CXX11_OPTIONS}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${CXX11_OPTIONS}")
+set(CMAKE_CXX_FLAGS "${CXX11_OPTIONS} ${CMAKE_CXX_FLAGS}")
 
 # Add proper -fPIC and MINGW handling
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -57,22 +52,54 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set(common "${common} -DMS_WIN64")
         endif()
     endif()
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${common}")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${common}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${common}")
 endif ()
 if (CMAKE_CXX_COMPILER_ID MATCHES Clang)
     set(common "-fPIC")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${common}")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${common}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${common}")
 endif ()
 
 # Check c++11 support
-try_compile(CXX11 "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_SOURCE_DIR}/cmake/checkcxx11.cpp"
-	CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS_RELEASE}" OUTPUT_VARIABLE CXX11_ERROR_LOG)
+try_compile(CXX11 "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/checkcxx11.cpp"
+	CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS}" OUTPUT_VARIABLE CXX11_ERROR_LOG)
 if (NOT ${CXX11})
 	message(FATAL_ERROR "Compiler does not support C++11 constructs. \n"
 		"CXX11 Error Log : \n${CXX11_ERROR_LOG}")
 endif()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    CHECK_CXX_COMPILER_FLAG("-Wno-implicit-fallthrough" NO_WARN_IMPLICIT_FALL_THROUGH_FLAG)
+endif()
+
+# check if linker supports exclude-libs
+if (NOT(MSVC))
+    try_compile(EXCLUDE_LIBS "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/checkcxx11.cpp"
+        CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS}"
+        CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${GMP_INCLUDE_DIRS}"
+        CMAKE_FLAGS "-DLINK_LIBRARIES=-Wl,--exclude-libs,ALL"
+        OUTPUT_VARIABLE EXCLUDE_LIBS_ERROR_LOG)
+endif()
+if (${EXCLUDE_LIBS})
+    message(STATUS "Linker supports --exclude-libs")
+else()
+    message(STATUS "Linker does not support --exclude-libs")
+endif()
+
+if (NOT(MSVC) AND NOT "${EXCLUDE_LIBS}" STREQUAL "TRUE")
+    try_compile(UNEXPORTED_SYMBOL "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/checkcxx11.cpp"
+        CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS}"
+        CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${GMP_INCLUDE_DIRS}"
+        CMAKE_FLAGS "-DLINK_LIBRARIES=-Wl,-unexported_symbol,dummy"
+        OUTPUT_VARIABLE UNEXPORTED_SYMBOL_ERROR_LOG)
+    if (${UNEXPORTED_SYMBOL})
+        message(STATUS "Linker supports -unexported_symbol")
+    else()
+        message(STATUS "Linker does not support -unexported_symbol")
+    endif()
+endif()
+
+include(CheckTypeSize)
+check_type_size("long double" SYMENGINE_SIZEOF_LONG_DOUBLE)
 
 set(HAVE_GCC_ABI_DEMANGLE yes
     CACHE BOOL "Build with C++ name demangling support")
@@ -108,13 +135,13 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "PGI")
     set(HAVE_SYMENGINE_RESERVE no)
 endif()
 
-try_compile(HAVE_SYMENGINE_STD_TO_STRING "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_SOURCE_DIR}/cmake/checkstdtostring.cpp"
-	CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS_RELEASE}")
+try_compile(HAVE_SYMENGINE_STD_TO_STRING "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/checkstdtostring.cpp"
+	CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS}")
 
 if ((CMAKE_CXX_COMPILER_ID MATCHES Clang) AND (CMAKE_BUILD_TYPE STREQUAL "Release"))
-    try_compile(CHECK_CLANG "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_SOURCE_DIR}/cmake/checkclang.cpp")
+    try_compile(CHECK_CLANG "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/checkclang.cpp")
     if (NOT ${CHECK_CLANG})
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -D__extern_always_inline=inline" )
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__extern_always_inline=inline" )
     endif()
 endif()
 
@@ -175,8 +202,8 @@ if (HAVE_SYMENGINE_GMP)
 
     # Check gmpxx
     if (NOT(MSVC) AND WITH_GMPXX)
-        try_compile(GMPXX "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_SOURCE_DIR}/cmake/checkgmpxx.cpp"
-            CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS_RELEASE}"
+        try_compile(GMPXX "${CMAKE_CURRENT_BINARY_DIR}/cxx" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/checkgmpxx.cpp"
+            CMAKE_FLAGS "-DCOMPILE_DEFINITIONS=${CMAKE_CXX_FLAGS}"
             CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${GMP_INCLUDE_DIRS}"
             CMAKE_FLAGS "-DLINK_LIBRARIES=${GMP_LIBRARIES}"
             OUTPUT_VARIABLE GMPXX_ERROR_LOG)
@@ -212,9 +239,6 @@ if (BUILD_SHARED_LIBS)
             set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--export-all-symbols")
         endif()
     endif()
-    set(SYMENGINE_STATIC_DEFINE no)
-else()
-    set(SYMENGINE_STATIC_DEFINE yes)
 endif()
 
 # ECM
@@ -259,6 +283,20 @@ set(HAVE_SYMENGINE_MPC False)
 # Virtual TypeID
 if (WITH_VIRTUAL_TYPEID)
     set(WITH_SYMENGINE_VIRTUAL_TYPEID True)
+endif()
+
+# Parser
+set(WITH_GENERATE_PARSER no CACHE BOOL "Generate parser files")
+if (WITH_GENERATE_PARSER)
+    find_program(BISON_EXECUTABLE bison)
+    find_program(RE2C_EXECUTABLE re2c)
+
+    if ("${BISON_EXECUTABLE}" STREQUAL "BISON_EXECUTABLE-NOTFOUND")
+        message(FATAL_ERROR "bison not found!")
+    endif()
+    if ("${RE2C_EXECUTABLE}" STREQUAL "RE2C_EXECUTABLE-NOTFOUND")
+        message(FATAL_ERROR "re2c not found!")
+    endif()
 endif()
 
 if (WITH_FLINT)
@@ -368,37 +406,37 @@ if (WITH_LLVM)
                              Require at least ${LLVM_MINIMUM_REQUIRED_VERSION}")
     endif()
     foreach(LLVM_FLAG ${LLVM_DEFINITIONS})
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LLVM_FLAG}")
-        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${LLVM_FLAG}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LLVM_FLAG}")
     endforeach()
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DNDEBUG")
 
-    llvm_map_components_to_libnames(llvm_libs ${SYMENGINE_LLVM_COMPONENTS})
+    llvm_map_components_to_libnames(llvm_libs_direct ${SYMENGINE_LLVM_COMPONENTS})
+    llvm_expand_dependencies(llvm_libs ${llvm_libs_direct})
 
-    set(SYMENGINE_LLVM_SHARED_DEFAULT False)
-    foreach(LLVM_LIB ${llvm_libs})
-        get_target_property(${LLVM_LIB}_IMPORT_LOCATION ${LLVM_LIB} LOCATION)
-        if (NOT "${${LLVM_LIB}_IMPORT_LOCATION}" MATCHES "NOTFOUND")
-            if (NOT "${${LLVM_LIB}_IMPORT_LOCATION}" MATCHES ".a$|.lib$")
-                set(SYMENGINE_LLVM_SHARED_DEFAULT True)
+    if (BUILD_SHARED_LIBS)
+        set(SYMENGINE_LLVM_LINK_DOWNSTREAM_DEFAULT False)
+        foreach(LLVM_LIB ${llvm_libs})
+            get_target_property(${LLVM_LIB}_IMPORT_LOCATION ${LLVM_LIB} LOCATION)
+            if (NOT "${${LLVM_LIB}_IMPORT_LOCATION}" MATCHES "NOTFOUND")
+                if (NOT "${${LLVM_LIB}_IMPORT_LOCATION}" MATCHES ".a$|.lib$")
+                    set(SYMENGINE_LLVM_LINK_DOWNSTREAM_DEFAULT True)
+                endif()
             endif()
-        endif()
-    endforeach()
-    set(SYMENGINE_LLVM_SHARED ${SYMENGINE_LLVM_SHARED_DEFAULT}
+        endforeach()
+    else()
+        set(SYMENGINE_LLVM_LINK_DOWNSTREAM_DEFAULT True)
+    endif()
+    set(SYMENGINE_LLVM_LINK_DOWNSTREAM ${SYMENGINE_LLVM_LINK_DOWNSTREAM_DEFAULT}
         CACHE INTERNAL "Link to llvm in SymEngineConfig.cmake")
+    if (NOT SYMENGINE_LLVM_LINK_DOWNSTREAM)
+        unset(SYMENGINE_LLVM_COMPONENTS)
+    endif ()
     set(LIBS ${LIBS} ${llvm_libs})
     include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
     set(HAVE_SYMENGINE_LLVM yes)
     set(PKGS ${PKGS} "LLVM")
+    message("LLVM VERSION: ${LLVM_VERSION}")
 endif()
-
-# TODO: Detect this automatically
-set(SYMENGINE_LINK_LLVM_STATIC no
-    CACHE BOOL "If set to yes, make LLVM a private dependency.")
-
-if (SYMENGINE_LINK_LLVM_STATIC)
-    unset(SYMENGINE_LLVM_COMPONENTS)
-endif ()
 
 # BENCHMARKS
 set(BUILD_BENCHMARKS yes
@@ -406,6 +444,9 @@ set(BUILD_BENCHMARKS yes
 
 set(BUILD_BENCHMARKS_NONIUS no
     CACHE BOOL "Build SymEngine Nonius benchmarks")
+
+set(BUILD_BENCHMARKS_GOOGLE no
+    CACHE BOOL "Build SymEngine Google Benchmark benchmarks")
 
 if (BUILD_BENCHMARKS)
     if (BUILD_BENCHMARKS_NONIUS)
@@ -451,10 +492,7 @@ if (WITH_TCMALLOC)
     set(LIBS ${LIBS} ${TCMALLOC_TARGETS})
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        set(CMAKE_CXX_FLAGS_DEBUG
-            "${CMAKE_CXX_FLAGS_DEBUG} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
-        set(CMAKE_CXX_FLAGS_RELEASE
-            "${CMAKE_CXX_FLAGS_RELEASE} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
     endif()
     set(PKGS ${PKGS} "TCMALLOC")
 
@@ -481,12 +519,8 @@ endif()
 set(WITH_SYMENGINE_ASSERT no
     CACHE BOOL "Enable SYMENGINE_ASSERT macro")
 
-# SYMENGINE_RCP
-set(WITH_SYMENGINE_RCP yes
-    CACHE BOOL "Enable SYMENGINE_RCP support")
-
 # SYMENGINE_THREAD_SAFE
-set(WITH_SYMENGINE_THREAD_SAFE no
+set(WITH_SYMENGINE_THREAD_SAFE "${BUILD_FOR_DISTRIBUTION}"
     CACHE BOOL "Enable SYMENGINE_THREAD_SAFE support")
 
 # TESTS
@@ -504,10 +538,7 @@ set(WITH_OPENMP no
 if (WITH_OPENMP)
     find_package(OpenMP REQUIRED)
     if(OPENMP_FOUND)
-        set(CMAKE_CXX_FLAGS_DEBUG
-            "${CMAKE_CXX_FLAGS_DEBUG} ${OpenMP_CXX_FLAGS}")
-        set(CMAKE_CXX_FLAGS_RELEASE
-            "${CMAKE_CXX_FLAGS_RELEASE} ${OpenMP_CXX_FLAGS}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
         set(WITH_SYMENGINE_THREAD_SAFE yes)
     endif()
 elseif (CMAKE_CXX_COMPILER_ID MATCHES Clang|GNU)
@@ -520,12 +551,18 @@ endif()
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     # In Debug mode we use Teuchos::RCP and enable debugging checks that make
     # the usage 100% safe, as long as the Teuchos guidelines are followed.
-    set(WITH_SYMENGINE_RCP no) # Use the Teuchos::RCP
+    set(WITH_SYMENGINE_RCP_DEFAULT no) # Use the Teuchos::RCP
     set(HAVE_TEUCHOS_DEBUG yes) # Enable safety checks
     set(HAVE_TEUCHOS_DEBUG_RCP_NODE_TRACING yes) # Enable safety checks
 
     set(WITH_SYMENGINE_ASSERT yes) # Also enable assertions
+else ()
+    set(WITH_SYMENGINE_RCP_DEFAULT yes)
 endif()
+
+# SYMENGINE_RCP
+set(WITH_SYMENGINE_RCP ${WITH_SYMENGINE_RCP_DEFAULT}
+    CACHE BOOL "Enable SYMENGINE_RCP support")
 
 if (WITH_COVERAGE)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} --coverage")
@@ -580,6 +617,7 @@ export(TARGETS ${SYMENGINE_TARGETS} FILE "${PROJECT_BINARY_DIR}/SymEngineTargets
 foreach(PKG ${PKGS})
     set(SYMENGINE_PKG_FINDS "${SYMENGINE_PKG_FINDS}\nset(SYMENGINE_${PKG}_LIBRARIES ${${PKG}_LIBRARIES})")
     set(SYMENGINE_PKG_FINDS "${SYMENGINE_PKG_FINDS}\nset(SYMENGINE_${PKG}_INCLUDE_DIRS ${${PKG}_INCLUDE_DIRS})")
+    set(SYMENGINE_PKG_FINDS "${SYMENGINE_PKG_FINDS}\nset(HAVE_SYMENGINE_${PKG} True)")
 endforeach()
 
 # ... for the build tree
@@ -644,6 +682,8 @@ message("CMAKE_C_COMPILER:   ${CMAKE_C_COMPILER}")
 message("CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
 message("CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 message("CMAKE_CONFIGURATION_TYPES: ${CMAKE_CONFIGURATION_TYPES}")
+message("CMAKE_C_FLAGS:           ${CMAKE_C_FLAGS}")
+message("CMAKE_CXX_FLAGS:         ${CMAKE_CXX_FLAGS}")
 message("CMAKE_CXX_FLAGS_DEBUG:   ${CMAKE_CXX_FLAGS_DEBUG}")
 message("CMAKE_CXX_FLAGS_RELEASE: ${CMAKE_CXX_FLAGS_RELEASE}")
 message("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
@@ -659,6 +699,7 @@ if (NOT WITH_SYMENGINE_RCP)
     message("HAVE_TEUCHOS_DEBUG_RCP_NODE_TRACING: ${HAVE_TEUCHOS_DEBUG_RCP_NODE_TRACING}")
 endif ()
 message("WITH_COTIRE: ${WITH_COTIRE}")
+message("WITH_GENERATE_PARSER: ${WITH_GENERATE_PARSER}")
 message("HAVE_GCC_ABI_DEMANGLE: ${HAVE_GCC_ABI_DEMANGLE}")
 message("HAVE_C_FUNCTION_NOT_FUNC: ${HAVE_C_FUNCTION_NOT_FUNC}")
 message("HAVE_DEFAULT_CONSTRUCTORS: ${HAVE_DEFAULT_CONSTRUCTORS}")
@@ -670,6 +711,7 @@ message("WITH_SYMENGINE_THREAD_SAFE: ${WITH_SYMENGINE_THREAD_SAFE}")
 message("BUILD_TESTS: ${BUILD_TESTS}")
 message("BUILD_BENCHMARKS: ${BUILD_BENCHMARKS}")
 message("BUILD_BENCHMARKS_NONIUS: ${BUILD_BENCHMARKS_NONIUS}")
+message("BUILD_BENCHMARKS_GOOGLE: ${BUILD_BENCHMARKS_GOOGLE}")
 
 message("WITH_GMP: ${HAVE_SYMENGINE_GMP}")
 if (HAVE_SYMENGINE_GMP)

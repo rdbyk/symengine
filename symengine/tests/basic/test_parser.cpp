@@ -5,6 +5,7 @@
 #include <symengine/parser.h>
 #include <symengine/polys/basic_conversions.h>
 #include <symengine/symengine_exception.h>
+#include <symengine/parser/parser.h>
 
 using SymEngine::Basic;
 using SymEngine::Add;
@@ -57,13 +58,47 @@ using SymEngine::logical_nor;
 using SymEngine::logical_or;
 using SymEngine::logical_xor;
 using SymEngine::logical_xnor;
+using SymEngine::YYSTYPE;
 
 using namespace SymEngine::literals;
+
+TEST_CASE("Parsing: internal data structures", "[parser]")
+{
+    std::string s;
+    RCP<const Basic> res = integer(5);
+    REQUIRE(res->use_count() == 1);
+
+    struct YYSTYPE a;
+    a.basic = res;
+    REQUIRE(res->use_count() == 2);
+    {
+        struct YYSTYPE b;
+        b = a;
+        REQUIRE(res->use_count() == 3);
+    }
+    REQUIRE(res->use_count() == 2);
+}
 
 TEST_CASE("Parsing: integers, basic operations", "[parser]")
 {
     std::string s;
     RCP<const Basic> res;
+
+    s = "-1^2";
+    res = parse(s);
+    REQUIRE(eq(*res, *integer(-1)));
+
+    s = "-2^2";
+    res = parse(s);
+    REQUIRE(eq(*res, *integer(-4)));
+
+    s = "-a^2";
+    res = parse(s);
+    REQUIRE(eq(*res, *neg(parse("a^2"))));
+
+    s = "-2a^2";
+    res = parse(s);
+    REQUIRE(eq(*res, *mul(integer(-2), parse("a^2"))));
 
     s = "-3-5";
     res = parse(s);
@@ -132,6 +167,14 @@ TEST_CASE("Parsing: integers, basic operations", "[parser]")
     s = "2**-3*2";
     res = parse(s);
     REQUIRE(eq(*res, *div(one, integer(4))));
+
+    s = "2^-2n*y";
+    res = parse(s);
+    REQUIRE(eq(*res, *parse("(2^(-2*n))*y")));
+
+    s = "2^2n*y";
+    res = parse(s);
+    REQUIRE(eq(*res, *parse("(2^(2*n))*y")));
 
     s = "10000000000000000000000000";
     res = parse(s);
@@ -298,6 +341,10 @@ TEST_CASE("Parsing: functions", "[parser]")
     s = "sin(max(log(x, y), min(x, y)))";
     res = parse(s);
     REQUIRE(eq(*res, *sin(max({log(x, y), min({x, y})}))));
+
+    s = "atan2(x, y)";
+    res = parse(s);
+    REQUIRE(eq(*res, *atan2(x, y)));
 
     s = "Eq(x)";
     res = parse(s);
@@ -541,6 +588,22 @@ TEST_CASE("Parsing: function_symbols", "[parser]")
         *res, *function_symbol("f", function_symbol("g", pow(integer(2), x)))));
 }
 
+TEST_CASE("Parsing: multi-arg functions", "[parser]")
+{
+    std::string s;
+    RCP<const Basic> res;
+    RCP<const Basic> x1 = symbol("x1");
+    RCP<const Basic> x2 = symbol("x2");
+
+    s = "x1*pow(x2,-1)";
+    res = parse(s);
+    REQUIRE(eq(*res, *div(x1, x2)));
+
+    s = "z + f(x + y, g(x), h(g(x)))";
+    res = parse(s);
+    REQUIRE(res->__str__() == s);
+}
+
 TEST_CASE("Parsing: doubles", "[parser]")
 {
     std::string s;
@@ -570,7 +633,7 @@ TEST_CASE("Parsing: doubles", "[parser]")
     res = parse(s);
     REQUIRE(is_a<RealDouble>(*res));
     d = down_cast<const RealDouble &>(*res).as_double();
-    REQUIRE(std::abs(d - (::sqrt(2) + 5)) < 1e-12);
+    REQUIRE(std::abs(d - (std::sqrt(2) + 5)) < 1e-12);
 
     // Test that https://github.com/symengine/symengine/issues/1413 is fixed
 
@@ -640,23 +703,26 @@ TEST_CASE("Parsing: errors", "[parser]")
     std::string s;
 
     s = "x+y+";
-    CHECK_THROWS_AS(parse(s), ParseError);
+    CHECK_THROWS_AS(parse(s), ParseError &);
 
     s = "x + (y))";
-    CHECK_THROWS_AS(parse(s), ParseError);
+    CHECK_THROWS_AS(parse(s), ParseError &);
 
     s = "x + max((3, 2+1)";
-    CHECK_THROWS_AS(parse(s), ParseError);
+    CHECK_THROWS_AS(parse(s), ParseError &);
 
     s = "2..33 + 2";
-    CHECK_THROWS_AS(parse(s), ParseError);
+    CHECK_THROWS_AS(parse(s), ParseError &);
 
     s = "(2)(3)";
-    CHECK_THROWS_AS(parse(s), ParseError);
+    CHECK_THROWS_AS(parse(s), ParseError &);
 
     s = "sin(x y)";
-    CHECK_THROWS_AS(parse(s), ParseError);
+    CHECK_THROWS_AS(parse(s), ParseError &);
 
     s = "max(,3,2)";
-    CHECK_THROWS_AS(parse(s), ParseError);
+    CHECK_THROWS_AS(parse(s), ParseError &);
+
+    s = "x+%y+z";
+    CHECK_THROWS_AS(parse(s), ParseError &);
 }

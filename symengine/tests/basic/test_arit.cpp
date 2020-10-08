@@ -328,7 +328,7 @@ TEST_CASE("Mul: arit", "[arit]")
     REQUIRE(s.size() == 2);
 
     CHECK_THROWS_AS(Complex::from_two_nums(*one, *real_double(1.0)),
-                    SymEngineException);
+                    SymEngineException &);
 
     r1 = mul({});
     REQUIRE(eq(*r1, *one));
@@ -1375,6 +1375,10 @@ TEST_CASE("Expand2: arit", "[arit]")
 
     r1 = add(x, mul(i2, add(y, z)));
     r2 = expand(r1, false);
+    REQUIRE(eq(*r1, *r2));
+
+    r1 = expand(pow(add(one, mul(i2, sqrt(add(y, z)))), i2));
+    r2 = expand(add(one, mul(i4, add(y, add(z, sqrt(add(y, z)))))));
     REQUIRE(eq(*r1, *r2));
 }
 

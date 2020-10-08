@@ -556,6 +556,14 @@ TEST_CASE("Diff: Basic", "[basic]")
     r1 = sdiff(add(pow(x, i2), x), x);
     r2 = diff(add(pow(x, i2), x), x);
     REQUIRE(eq(*r1, *r2));
+
+    r1 = diff(mul(x, add(one, x)), x);
+    r2 = add(one, mul(i2, x));
+    REQUIRE(eq(*r1, *r2));
+
+    // Test that this doesn't segfault
+    r1 = pow(sqrt(div(x, i3)), real_double(2.0));
+    r1 = diff(r1, x);
 }
 
 TEST_CASE("compare: Basic", "[basic]")
@@ -704,7 +712,7 @@ TEST_CASE("compare: Basic", "[basic]")
     CHECK(r1->__cmp__(*r2) != 0);
     CHECK(r1->__cmp__(*r1) == 0);
 
-    CHECK_THROWS_AS(r2->expand_as_exp(), NotImplementedError);
+    CHECK_THROWS_AS(r2->expand_as_exp(), NotImplementedError &);
 
     r1 = pi;
     r2 = EulerGamma;
@@ -900,11 +908,11 @@ TEST_CASE("Complex: Basic", "[basic]")
 
     c1 = Complex::from_two_nums(*integer(2), *integer(5));
     c2 = Rational::from_two_ints(4, 5);
-    CHECK_THROWS_AS(c2->div(*c1), NotImplementedError);
+    CHECK_THROWS_AS(c2->div(*c1), NotImplementedError &);
 
     c1 = Complex::from_two_nums(*integer(2), *integer(5));
     c2 = integer(3);
-    CHECK_THROWS_AS(c2->pow(*c1), NotImplementedError);
+    CHECK_THROWS_AS(c2->pow(*c1), NotImplementedError &);
 }
 
 TEST_CASE("has_symbol: Basic", "[basic]")
@@ -927,7 +935,7 @@ TEST_CASE("has_symbol: Basic", "[basic]")
 
 TEST_CASE("coeff: Basic", "[basic]")
 {
-    RCP<const Basic> r1, r2, r3;
+    RCP<const Basic> r1, r2, r3, r4, r5, r6;
     RCP<const Symbol> x, y, z;
     RCP<const Basic> f1, f2;
     x = symbol("x");
@@ -938,25 +946,49 @@ TEST_CASE("coeff: Basic", "[basic]")
     r1 = add(x, pow(y, integer(2)));
     r2 = add(add(mul(integer(2), z), pow(x, integer(3))), pow(y, integer(2)));
     r3 = add(add(add(add(r2, mul(x, z)), f1), f2), mul(f1, integer(3)));
+    r4 = mul(pow(x, integer(2)), y);
+    r5 = expand(pow(add(x, y), 3));
+    r6 = add(add(add(x, sin(x)), mul(x, sin(x))), y);
+    REQUIRE(eq(*coeff(*x, *x, *integer(1)), *integer(1)));
+    REQUIRE(eq(*coeff(*x, *x, *integer(0)), *integer(0)));
+
     REQUIRE(eq(*coeff(*r1, *x, *integer(1)), *integer(1)));
     REQUIRE(eq(*coeff(*r1, *x, *integer(1)), *integer(1)));
-    REQUIRE(eq(*coeff(*r1, *y, *integer(0)), *integer(0)));
+    REQUIRE(eq(*coeff(*r1, *y, *integer(0)), *x));
     REQUIRE(eq(*coeff(*r1, *y, *integer(1)), *integer(0)));
     REQUIRE(eq(*coeff(*r1, *y, *integer(2)), *integer(1)));
     REQUIRE(eq(*coeff(*r1, *z, *integer(2)), *integer(0)));
 
-    REQUIRE(eq(*coeff(*r2, *y, *integer(0)), *integer(0)));
+    REQUIRE(eq(*coeff(*r2, *y, *integer(0)),
+               *add(mul(integer(2), z), pow(x, integer(3)))));
     REQUIRE(eq(*coeff(*r2, *y, *integer(1)), *integer(0)));
     REQUIRE(eq(*coeff(*r2, *y, *integer(2)), *integer(1)));
-    REQUIRE(eq(*coeff(*r2, *z, *integer(0)), *integer(0)));
+    REQUIRE(eq(*coeff(*r2, *z, *integer(0)),
+               *add(pow(x, integer(3)), pow(y, integer(2)))));
     REQUIRE(eq(*coeff(*r2, *z, *integer(1)), *integer(2)));
     REQUIRE(eq(*coeff(*r2, *z, *integer(2)), *integer(0)));
     REQUIRE(eq(*coeff(*r2, *x, *integer(2)), *integer(0)));
     REQUIRE(eq(*coeff(*r2, *x, *integer(3)), *integer(1)));
+    REQUIRE(eq(*coeff(*r2, *x, *integer(0)),
+               *add(mul(integer(2), z), pow(y, integer(2)))));
 
     REQUIRE(eq(*coeff(*r3, *z, *integer(1)), *add(x, integer(2))));
     REQUIRE(eq(*coeff(*r3, *f1, *integer(1)), *integer(4)));
+    REQUIRE(eq(*coeff(*r3, *f1, *integer(0)), *add(add(r2, mul(x, z)), f2)));
     REQUIRE(eq(*coeff(*r3, *f2, *integer(1)), *integer(1)));
+
+    REQUIRE(eq(*coeff(*r4, *x, *integer(0)), *integer(0)));
+    REQUIRE(eq(*coeff(*r4, *x, *integer(1)), *integer(0)));
+    REQUIRE(eq(*coeff(*r4, *x, *integer(2)), *y));
+
+    REQUIRE(eq(*coeff(*r5, *x, *integer(3)), *integer(1)));
+    REQUIRE(eq(*coeff(*r5, *x, *integer(2)), *mul(integer(3), y)));
+    REQUIRE(
+        eq(*coeff(*r5, *x, *integer(1)), *mul(integer(3), pow(y, integer(2)))));
+    REQUIRE(eq(*coeff(*r5, *x, *integer(0)), *pow(y, integer(3))));
+
+    REQUIRE(eq(*coeff(*r6, *x, *integer(0)), *y));
+    REQUIRE(eq(*coeff(*add(r6, one), *x, *integer(0)), *add(y, one)));
 }
 
 TEST_CASE("free_symbols: Basic", "[basic]")
@@ -984,6 +1016,34 @@ TEST_CASE("free_symbols: Basic", "[basic]")
     s = free_symbols(*r1);
     REQUIRE(s.size() == 1);
     REQUIRE(s.count(x) == 1);
+}
+
+TEST_CASE("function_symbols: Basic", "[basic]")
+{
+    RCP<const Basic> r1, f1, f2;
+    RCP<const Symbol> x, y, z;
+    x = symbol("x");
+    y = symbol("y");
+    z = symbol("z");
+    f1 = function_symbol("f", x);
+    f2 = function_symbol("g", {y, z});
+
+    r1 = add(x, add(z, pow(y, x)));
+    set_basic s = function_symbols(*r1);
+    REQUIRE(s.size() == 0);
+    s.clear();
+
+    r1 = f1;
+    s = function_symbols(*r1);
+    REQUIRE(s.size() == 1);
+    REQUIRE(s.count(f1) == 1);
+    s.clear();
+
+    r1 = cos(add(f1, f2));
+    s = function_symbols(*r1);
+    REQUIRE(s.size() == 2);
+    REQUIRE(s.count(f1) == 1);
+    REQUIRE(s.count(f2) == 1);
 }
 
 TEST_CASE("atoms: Basic", "[basic]")

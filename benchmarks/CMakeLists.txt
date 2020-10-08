@@ -79,3 +79,15 @@ if (BUILD_BENCHMARKS_NONIUS)
     add_executable(bench_eval_double bench_eval_double.cpp)
     target_link_libraries(bench_eval_double symengine)
 endif()
+
+if (BUILD_BENCHMARKS_GOOGLE)
+    find_package(benchmark REQUIRED)
+    add_executable(visitor_call visitor_call.cpp)
+    target_link_libraries(visitor_call symengine benchmark::benchmark)
+endif()
+
+add_executable(parsing parsing.cpp)
+target_link_libraries(parsing symengine)
+
+add_executable(diff_cache diff_cache.cpp)
+target_link_libraries(diff_cache symengine)

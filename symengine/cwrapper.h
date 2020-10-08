@@ -34,7 +34,7 @@ typedef symengine_exceptions_t CWRAPPER_OUTPUT_TYPE;
 
 typedef enum {
 #define SYMENGINE_INCLUDE_ALL
-#define SYMENGINE_ENUM(type, Class) SYMENGINE_##type,
+#define SYMENGINE_ENUM(type, Class) type,
 #include "symengine/type_codes.inc"
 #undef SYMENGINE_ENUM
 #undef SYMENGINE_INCLUDE_ALL
@@ -148,7 +148,8 @@ CWRAPPER_OUTPUT_TYPE basic_parse2(basic b, const char *str, int convert_xor);
 TypeID basic_get_type(const basic s);
 //! Returns the typeID of the class with the name c
 TypeID basic_get_class_id(const char *c);
-//! Returns the class name of with the typeid `id`
+//! Returns the class name of an object with the typeid `id`.
+//! The caller is responsible to free the string with 'basic_str_free'
 char *basic_get_class_from_id(TypeID id);
 
 //! Assign to s, a symbol with string representation c.
@@ -332,6 +333,8 @@ CWRAPPER_OUTPUT_TYPE basic_zeta(basic s, const basic a);
 CWRAPPER_OUTPUT_TYPE basic_dirichlet_eta(basic s, const basic a);
 //! Assigns s = gamma(a).
 CWRAPPER_OUTPUT_TYPE basic_gamma(basic s, const basic a);
+//! Assigns s = loggamma(a).
+CWRAPPER_OUTPUT_TYPE basic_loggamma(basic s, const basic a);
 //! Assigns s = sqrt(a).
 CWRAPPER_OUTPUT_TYPE basic_sqrt(basic s, const basic a);
 //! Assigns s = cbrt(a).
@@ -343,18 +346,38 @@ CWRAPPER_OUTPUT_TYPE basic_log(basic s, const basic a);
 
 //! Assigns s = atan2(a, b).
 CWRAPPER_OUTPUT_TYPE basic_atan2(basic s, const basic a, const basic b);
+//! Assigns s = kronecker_delta(a, b).
+CWRAPPER_OUTPUT_TYPE basic_kronecker_delta(basic s, const basic a,
+                                           const basic b);
+//! Assigns s = lowergamma(a, b).
+CWRAPPER_OUTPUT_TYPE basic_lowergamma(basic s, const basic a, const basic b);
+//! Assigns s = uppergamma(a, b).
+CWRAPPER_OUTPUT_TYPE basic_uppergamma(basic s, const basic a, const basic b);
+//! Assigns s = beta(a, b).
+CWRAPPER_OUTPUT_TYPE basic_beta(basic s, const basic a, const basic b);
+//! Assigns s = polygamma(a, b).
+CWRAPPER_OUTPUT_TYPE basic_polygamma(basic s, const basic a, const basic b);
 
 //! Returns a new char pointer to the string representation of s.
 char *basic_str(const basic s);
 //! Returns a new char pointer to the string representation of s.
 //! Compatible with Julia
 char *basic_str_julia(const basic s);
+//! Printing mathml
+char *basic_str_mathml(const basic s);
+//! Printing latex string
+char *basic_str_latex(const basic s);
+//! Printing C code
+char *basic_str_ccode(const basic s);
+//! Printing JavaScript code
+char *basic_str_jscode(const basic s);
 //! Frees the string s
 void basic_str_free(char *s);
 
 //! Returns 1 if a specific component is installed and 0 if not.
 //! Component can be "mpfr", "flint", "arb", "mpc", "ecm", "primesieve",
-//! "piranha", "boost", "pthread" or "llvm" (all in lowercase).
+//! "piranha", "boost", "pthread", "llvm" or "llvm_long_double" (all in
+//! lowercase).
 //! This function, using string comparison, was implemented for particular
 //! libraries that do not provide header access (i.e. SymEngine.jl
 //! and other related shared libraries).
@@ -438,7 +461,8 @@ void sparse_matrix_free(CSparseMatrix *self);
 //! Assign to s, a DenseMatrix with value d
 CWRAPPER_OUTPUT_TYPE dense_matrix_set(CDenseMatrix *s, const CDenseMatrix *d);
 
-//! Return a string representation of s
+//! Return a string representation of s.
+//! The caller is responsible to free the string with 'basic_str_free'
 char *dense_matrix_str(const CDenseMatrix *s);
 //! Resize mat to rxc
 CWRAPPER_OUTPUT_TYPE dense_matrix_rows_cols(CDenseMatrix *mat, unsigned r,
@@ -613,7 +637,8 @@ CWRAPPER_OUTPUT_TYPE basic_subs2(basic s, const basic e, const basic a,
 //! symbols arg
 CWRAPPER_OUTPUT_TYPE function_symbol_set(basic s, const char *c,
                                          const CVecBasic *arg);
-//! Returns the name of the given FunctionSymbol
+//! Returns the name of the given FunctionSymbol.
+//! The caller is responsible to free the string with 'basic_str_free'
 char *function_symbol_get_name(const basic b);
 //! Returns the coefficient of x^n in b
 CWRAPPER_OUTPUT_TYPE basic_coeff(basic c, const basic b, const basic x,
@@ -693,6 +718,7 @@ void lambda_real_double_visitor_free(CLambdaRealDoubleVisitor *self);
 
 //! Wrapper for LambdaRealDoubleVisitor
 #ifdef HAVE_SYMENGINE_LLVM
+// double
 typedef struct CLLVMDoubleVisitor CLLVMDoubleVisitor;
 CLLVMDoubleVisitor *llvm_double_visitor_new();
 void llvm_double_visitor_init(CLLVMDoubleVisitor *self, const CVecBasic *args,
@@ -701,6 +727,29 @@ void llvm_double_visitor_init(CLLVMDoubleVisitor *self, const CVecBasic *args,
 void llvm_double_visitor_call(CLLVMDoubleVisitor *self, double *const outs,
                               const double *const inps);
 void llvm_double_visitor_free(CLLVMDoubleVisitor *self);
+// float
+typedef struct CLLVMFloatVisitor CLLVMFloatVisitor;
+CLLVMFloatVisitor *llvm_float_visitor_new();
+void llvm_float_visitor_init(CLLVMFloatVisitor *self, const CVecBasic *args,
+                             const CVecBasic *exprs, int perform_cse,
+                             int opt_level);
+void llvm_float_visitor_call(CLLVMFloatVisitor *self, float *const outs,
+                             const float *const inps);
+void llvm_float_visitor_free(CLLVMFloatVisitor *self);
+
+#ifdef SYMENGINE_HAVE_LLVM_LONG_DOUBLE
+// long double
+typedef struct CLLVMLongDoubleVisitor CLLVMLongDoubleVisitor;
+CLLVMLongDoubleVisitor *llvm_long_double_visitor_new();
+void llvm_long_double_visitor_init(CLLVMLongDoubleVisitor *self,
+                                   const CVecBasic *args,
+                                   const CVecBasic *exprs, int perform_cse,
+                                   int opt_level);
+void llvm_long_double_visitor_call(CLLVMLongDoubleVisitor *self,
+                                   long double *const outs,
+                                   const long double *const inps);
+void llvm_long_double_visitor_free(CLLVMLongDoubleVisitor *self);
+#endif
 #endif
 
 CWRAPPER_OUTPUT_TYPE basic_cse(CVecBasic *replacement_syms,

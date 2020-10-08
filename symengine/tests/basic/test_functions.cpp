@@ -151,10 +151,12 @@ using SymEngine::digamma;
 using SymEngine::trigamma;
 using SymEngine::floor;
 using SymEngine::ceiling;
+using SymEngine::truncate;
 using SymEngine::Eq;
 using SymEngine::Conjugate;
 using SymEngine::rewrite_as_exp;
 using SymEngine::mul;
+using SymEngine::unevaluated_expr;
 
 using namespace SymEngine::literals;
 
@@ -3113,7 +3115,7 @@ TEST_CASE("Erf: functions", "[functions]")
             < 1e-12);
 
     CHECK_THROWS_AS(erf(complex_double(std::complex<double>(1, 1))),
-                    NotImplementedError);
+                    NotImplementedError &);
 
     r1 = erf(mul(i2, x));
     r2 = exp(mul(integer(-4), (mul(x, x))));
@@ -3156,7 +3158,7 @@ TEST_CASE("Erfc: functions", "[functions]")
             < 1e-12);
 
     CHECK_THROWS_AS(erfc(complex_double(std::complex<double>(1, 1))),
-                    NotImplementedError);
+                    NotImplementedError &);
 
     r1 = erfc(mul(i3, x));
     r2 = exp(mul(integer(-9), (mul(x, x))));
@@ -3215,7 +3217,7 @@ TEST_CASE("Gamma: functions", "[functions]")
             < 1e-12);
 
     CHECK_THROWS_AS(gamma(complex_double(std::complex<double>(1, 1))),
-                    NotImplementedError);
+                    NotImplementedError &);
 
     r1 = gamma(div(integer(-15), i2));
     r2 = mul(div(integer(256), integer(2027025)), sqrt(pi));
@@ -3702,6 +3704,7 @@ TEST_CASE("Abs: functions", "[functions]")
     REQUIRE(eq(*abs(x)->diff(y), *integer(0)));
     REQUIRE(eq(*abs(sub(x, y)), *abs(sub(y, x))));
     REQUIRE(eq(*abs(real_double(-1.0)), *real_double(1.0)));
+    REQUIRE(eq(*abs(abs(x)), *abs(x)));
 }
 
 class MySin : public FunctionWrapper
@@ -3863,7 +3866,7 @@ TEST_CASE("MPFR and MPC: functions", "[functions]")
             == 0);
 
     mpfr_set_si(a.get_mpfr_t(), -3, MPFR_RNDN);
-    CHECK_THROWS_AS(gamma(real_mpfr(a)), NotImplementedError);
+    CHECK_THROWS_AS(gamma(real_mpfr(a)), NotImplementedError &);
 
     for (unsigned i = 0; i < testvec.size(); i++) {
         r1 = std::get<0>(testvec[i]);
@@ -3984,13 +3987,13 @@ TEST_CASE("MPFR and MPC: functions", "[functions]")
     }
 
     mpc_set_si_si(c.get_mpc_t(), 1, 1, MPFR_RNDN);
-    CHECK_THROWS_AS(erf(complex_mpc(c)), NotImplementedError);
-    CHECK_THROWS_AS(erfc(complex_mpc(c)), NotImplementedError);
-    CHECK_THROWS_AS(gamma(complex_mpc(c)), NotImplementedError);
+    CHECK_THROWS_AS(erf(complex_mpc(c)), NotImplementedError &);
+    CHECK_THROWS_AS(erfc(complex_mpc(c)), NotImplementedError &);
+    CHECK_THROWS_AS(gamma(complex_mpc(c)), NotImplementedError &);
 #else
     mpfr_set_si(a.get_mpfr_t(), 2, MPFR_RNDN);
-    CHECK_THROWS_AS(asin(real_mpfr(a)), SymEngineException);
-    CHECK_THROWS_AS(asech(real_mpfr(a)), SymEngineException);
+    CHECK_THROWS_AS(asin(real_mpfr(a)), SymEngineException &);
+    CHECK_THROWS_AS(asech(real_mpfr(a)), SymEngineException &);
 #endif // HAVE_SYMENGINE_MPC
 #endif // HAVE_SYMENGINE_MPFR
 }
@@ -4049,9 +4052,9 @@ TEST_CASE("max: functions", "[functions]")
     REQUIRE(eq(
         *res, *max({x, i2, y}))); // max(max(2, x), max(2/5, y)) == max(x, 2, y)
 
-    CHECK_THROWS_AS(min({}), SymEngineException);
+    CHECK_THROWS_AS(min({}), SymEngineException &);
 
-    CHECK_THROWS_AS(min({c}), SymEngineException);
+    CHECK_THROWS_AS(min({c}), SymEngineException &);
 }
 
 TEST_CASE("min: functions", "[functions]")
@@ -4099,9 +4102,9 @@ TEST_CASE("min: functions", "[functions]")
         *res,
         *min({x, r2_5, y}))); // min(min(2, x), min(2/5, y)) == min(x, 2/5, y)
 
-    CHECK_THROWS_AS(min({}), SymEngineException);
+    CHECK_THROWS_AS(min({}), SymEngineException &);
 
-    CHECK_THROWS_AS(min({c}), SymEngineException);
+    CHECK_THROWS_AS(min({c}), SymEngineException &);
 }
 
 TEST_CASE("test_dummy", "[Dummy]")
@@ -4259,6 +4262,9 @@ TEST_CASE("test_floor", "[Floor]")
     r = floor(ceiling(x));
     CHECK(eq(*r, *ceiling(x)));
 
+    r = floor(truncate(x));
+    CHECK(eq(*r, *truncate(x)));
+
     r = floor(add(add(integer(2), mul(integer(2), x)), mul(integer(3), y)));
     CHECK(eq(*r, *add(integer(2),
                       floor(add(mul(integer(2), x), mul(integer(3), y))))));
@@ -4268,7 +4274,7 @@ TEST_CASE("test_floor", "[Floor]")
     CHECK(eq(*r, *floor(add(add(mul(integer(2), x), mul(integer(3), y)),
                             Rational::from_two_ints(2, 3)))));
 
-    CHECK_THROWS_AS(floor(Eq(integer(2), integer(3))), SymEngineException);
+    CHECK_THROWS_AS(floor(Eq(integer(2), integer(3))), SymEngineException &);
 
 #ifdef HAVE_SYMENGINE_MPFR
     mpfr_class a(100);
@@ -4331,6 +4337,9 @@ TEST_CASE("test_ceiling", "[Ceiling]")
     r = ceiling(ceiling(x));
     CHECK(eq(*r, *ceiling(x)));
 
+    r = ceiling(truncate(x));
+    CHECK(eq(*r, *truncate(x)));
+
     r = ceiling(add(add(integer(2), mul(integer(2), x)), mul(integer(3), y)));
     CHECK(eq(*r, *add(integer(2),
                       ceiling(add(mul(integer(2), x), mul(integer(3), y))))));
@@ -4340,7 +4349,7 @@ TEST_CASE("test_ceiling", "[Ceiling]")
     CHECK(eq(*r, *ceiling(add(add(mul(integer(2), x), mul(integer(3), y)),
                               Rational::from_two_ints(2, 3)))));
 
-    CHECK_THROWS_AS(ceiling(Eq(integer(2), integer(3))), SymEngineException);
+    CHECK_THROWS_AS(ceiling(Eq(integer(2), integer(3))), SymEngineException &);
 
 #ifdef HAVE_SYMENGINE_MPFR
     mpfr_class a(100);
@@ -4354,6 +4363,81 @@ TEST_CASE("test_ceiling", "[Ceiling]")
     mpc_set_d_d(b.get_mpc_t(), 10.65, 11.47, MPFR_RNDN);
     r = ceiling(complex_mpc(std::move(b)));
     CHECK(eq(*r, *Complex::from_two_nums(*integer(11), *integer(12))));
+#endif // HAVE_SYMENGINE_MPC
+}
+
+TEST_CASE("test_truncate", "[Truncate]")
+{
+    RCP<const Basic> x = symbol("x");
+    RCP<const Basic> y = symbol("y");
+    RCP<const Basic> r = truncate(integer(1));
+    CHECK(eq(*r, *one));
+
+    r = truncate(Complex::from_two_nums(*integer(2), *integer(1)));
+    CHECK(eq(*r, *Complex::from_two_nums(*integer(2), *integer(1))));
+
+    r = truncate(Nan);
+    CHECK(eq(*r, *Nan));
+
+    r = truncate(Inf);
+    CHECK(eq(*r, *Inf));
+
+    r = truncate(NegInf);
+    CHECK(eq(*r, *NegInf));
+
+    r = truncate(Rational::from_two_ints(3, 1));
+    CHECK(eq(*r, *integer(3)));
+
+    r = truncate(Rational::from_two_ints(3, 2));
+    CHECK(eq(*r, *integer(1)));
+
+    r = truncate(Rational::from_two_ints(-3, 2));
+    CHECK(eq(*r, *integer(-1)));
+
+    r = truncate(real_double(2.65));
+    CHECK(eq(*r, *integer(2)));
+
+    r = truncate(complex_double(std::complex<double>(2.86, 2.79)));
+    CHECK(eq(*r, *Complex::from_two_nums(*integer(2), *integer(2))));
+
+    r = truncate(pi);
+    CHECK(eq(*r, *integer(3)));
+
+    r = truncate(E);
+    CHECK(eq(*r, *integer(2)));
+
+    r = truncate(floor(x));
+    CHECK(eq(*r, *floor(x)));
+
+    r = truncate(ceiling(x));
+    CHECK(eq(*r, *ceiling(x)));
+
+    r = truncate(truncate(x));
+    CHECK(eq(*r, *truncate(x)));
+
+    r = truncate(add(add(integer(2), mul(integer(2), x)), mul(integer(3), y)));
+    CHECK(eq(*r, *add(integer(2),
+                      truncate(add(mul(integer(2), x), mul(integer(3), y))))));
+
+    r = truncate(add(add(Rational::from_two_ints(2, 3), mul(integer(2), x)),
+                     mul(integer(3), y)));
+    CHECK(eq(*r, *truncate(add(add(mul(integer(2), x), mul(integer(3), y)),
+                               Rational::from_two_ints(2, 3)))));
+
+    CHECK_THROWS_AS(truncate(Eq(integer(2), integer(3))), SymEngineException &);
+
+#ifdef HAVE_SYMENGINE_MPFR
+    mpfr_class a(100);
+    mpfr_set_d(a.get_mpfr_t(), 10.65, MPFR_RNDN);
+    r = truncate(real_mpfr(std::move(a)));
+    CHECK(eq(*r, *integer(10)));
+#endif // HAVE_SYMENGINE_MPFR
+
+#ifdef HAVE_SYMENGINE_MPC
+    mpc_class b(100);
+    mpc_set_d_d(b.get_mpc_t(), 10.65, 11.47, MPFR_RNDN);
+    r = truncate(complex_mpc(std::move(b)));
+    CHECK(eq(*r, *Complex::from_two_nums(*integer(10), *integer(11))));
 #endif // HAVE_SYMENGINE_MPC
 }
 
@@ -4560,4 +4644,23 @@ TEST_CASE("test rewrite_as_exp", "[Functions]")
         {mul({rational(-1, 2), I, sub(exp(mul(I, x)), exp(mul(neg(I), x)))}),
          symbol("y"), symbol("z")});
     REQUIRE(eq(*r1, *r2));
+}
+TEST_CASE("test UnevaluatedExpr", "[Functions]")
+{
+    RCP<const Basic> x = symbol("x");
+    RCP<const Basic> y = pow(add(x, one), integer(2));
+    RCP<const Basic> z = unevaluated_expr(y);
+    auto r1 = add(z, x);
+    auto r2 = add(y, x);
+    REQUIRE(neq(*r1, *r2));
+    REQUIRE(eq(*expand(z), *z));
+
+    y = add(x, one);
+    z = unevaluated_expr(y);
+    r1 = add(z, one);
+    r2 = add(y, one);
+    REQUIRE(neq(*r1, *r2));
+
+    r1 = z->subs({{x, zero}});
+    REQUIRE(neq(*r1, *one));
 }

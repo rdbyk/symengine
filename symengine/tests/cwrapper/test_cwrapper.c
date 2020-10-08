@@ -938,7 +938,8 @@ void test_linsolve()
 void test_solve_poly()
 {
     basic x, a;
-    basic m1, i2;
+    basic m1, i2, i5;
+    CWRAPPER_OUTPUT_TYPE error_code;
 
     basic_new_stack(x);
     basic_new_stack(a);
@@ -948,11 +949,13 @@ void test_solve_poly()
 
     basic_new_stack(m1);
     basic_new_stack(i2);
+    basic_new_stack(i5);
 
     basic_const_minus_one(m1);
     integer_set_si(i2, 2);
+    integer_set_si(i5, 5);
 
-    // x^2 - 1
+    // a = x^2 - 1
     basic_pow(a, x, i2);
     basic_add(a, a, m1);
 
@@ -962,10 +965,22 @@ void test_solve_poly()
 
     setbasic_free(r);
 
+    // a = exp(x) - 1
+    basic_exp(a, x);
+    basic_add(a, a, m1);
+
+    CSetBasic *r3 = setbasic_new();
+    error_code = basic_solve_poly(r3, a, x);
+    SYMENGINE_C_ASSERT(setbasic_size(r3) == 0);
+    SYMENGINE_C_ASSERT(error_code == SYMENGINE_RUNTIME_ERROR);
+
+    setbasic_free(r3);
+
     basic_free_stack(m1);
     basic_free_stack(a);
     basic_free_stack(x);
     basic_free_stack(i2);
+    basic_free_stack(i5);
 }
 
 void test_constants()
@@ -1117,6 +1132,13 @@ void test_constants()
 #else
     SYMENGINE_C_ASSERT(!symengine_have_component(s));
 #endif
+    // Checking llvm builds with optional long double
+    s = "llvm_long_double";
+#ifdef HAVE_SYMENGINE_LLVM_LONG_DOUBLE
+    SYMENGINE_C_ASSERT(symengine_have_component(s));
+#else
+    SYMENGINE_C_ASSERT(!symengine_have_component(s));
+#endif
 
     basic_free_stack(custom);
     basic_free_stack(pi);
@@ -1189,14 +1211,16 @@ void test_ascii_art()
 
 void test_functions()
 {
-    basic pi, e;
+    basic pi, e, complex_inf;
     basic minus_one, minus_half, zero, one, two, three, four;
     basic pi_div_two, pi_div_four;
     basic e_minus_one;
+    basic exp_minus_two;
     basic ans, res;
 
     basic_new_stack(pi);
     basic_new_stack(e);
+    basic_new_stack(complex_inf);
     basic_new_stack(ans);
     basic_new_stack(res);
     basic_new_stack(two);
@@ -1208,10 +1232,12 @@ void test_functions()
     basic_new_stack(minus_one);
     basic_new_stack(zero);
     basic_new_stack(e_minus_one);
+    basic_new_stack(exp_minus_two);
     basic_new_stack(minus_half);
 
     basic_const_pi(pi);
     basic_const_E(e);
+    basic_const_complex_infinity(complex_inf);
     integer_set_si(two, 2);
     integer_set_si(four, 4);
     integer_set_si(three, 3);
@@ -1231,6 +1257,8 @@ void test_functions()
     basic_pow(e_minus_one, e, minus_one);
     basic_mul(e_minus_one, e_minus_one, minus_one);
     basic_div(minus_half, minus_one, two);
+    basic_mul(exp_minus_two, minus_one, two);
+    basic_exp(exp_minus_two, exp_minus_two);
 
     char *s;
 
@@ -1340,9 +1368,28 @@ void test_functions()
     basic_gamma(ans, one);
     SYMENGINE_C_ASSERT(basic_eq(ans, one));
 
+    basic_loggamma(ans, one);
+    SYMENGINE_C_ASSERT(basic_eq(ans, zero));
+
     basic_atan2(ans, one, one);
     basic_mul(ans, ans, four);
     SYMENGINE_C_ASSERT(basic_eq(ans, pi));
+
+    basic_kronecker_delta(ans, two, two);
+    SYMENGINE_C_ASSERT(basic_eq(ans, one));
+
+    basic_lowergamma(ans, one, two);
+    basic_add(ans, ans, exp_minus_two);
+    SYMENGINE_C_ASSERT(basic_eq(ans, one));
+
+    basic_div(ans, one, two);
+    basic_beta(ans, ans, two);
+    basic_mul(ans, ans, three);
+    SYMENGINE_C_ASSERT(basic_eq(ans, four));
+
+    basic_mul(ans, minus_one, two);
+    basic_polygamma(ans, two, ans);
+    SYMENGINE_C_ASSERT(basic_eq(ans, complex_inf));
 
     basic_max(ans, vec);
     SYMENGINE_C_ASSERT(basic_eq(ans, four));
@@ -1364,6 +1411,8 @@ void test_functions()
     basic_free_stack(e);
     basic_free_stack(e_minus_one);
     basic_free_stack(minus_half);
+    basic_free_stack(exp_minus_two);
+    basic_free_stack(complex_inf);
     vecbasic_free(vec);
 }
 
@@ -2086,6 +2135,7 @@ void test_lambda_double()
         SYMENGINE_C_ASSERT(fabs(outs[0] - 43.5) < 1e-12);
         SYMENGINE_C_ASSERT(fabs(outs[1] - 45.0) < 1e-12);
 #ifdef HAVE_SYMENGINE_LLVM
+        // double
         int symbolic_cse = 1, opt_level = 2;
         CLLVMDoubleVisitor *vis2 = llvm_double_visitor_new();
         llvm_double_visitor_init(vis2, args, exprs, symbolic_cse, opt_level);
@@ -2093,6 +2143,28 @@ void test_lambda_double()
         llvm_double_visitor_free(vis2);
         SYMENGINE_C_ASSERT(fabs(outs[0] - 43.5) < 1e-12);
         SYMENGINE_C_ASSERT(fabs(outs[1] - 45.0) < 1e-12);
+
+        // float
+        float outs_f[2];
+        float inps_f[3] = {1.5F, 2.0F, 3.0F};
+        CLLVMFloatVisitor *vis2f = llvm_float_visitor_new();
+        llvm_float_visitor_init(vis2f, args, exprs, symbolic_cse, opt_level);
+        llvm_float_visitor_call(vis2f, outs_f, inps_f);
+        llvm_float_visitor_free(vis2f);
+        SYMENGINE_C_ASSERT(fabs(outs_f[0] - 43.5F) < 1e-6F);
+        SYMENGINE_C_ASSERT(fabs(outs_f[1] - 45.0F) < 1e-6F);
+#ifdef HAVE_SYMENGINE_LLVM_LONG_DOUBLE
+        // long double
+        long double outs_l[2];
+        long double inps_l[3] = {1.5L, 2.0L, 3.0L};
+        CLLVMLongDoubleVisitor *vis2l = llvm_long_double_visitor_new();
+        llvm_long_double_visitor_init(vis2l, args, exprs, symbolic_cse,
+                                      opt_level);
+        llvm_long_double_visitor_call(vis2l, outs_l, inps_l);
+        llvm_long_double_visitor_free(vis2l);
+        SYMENGINE_C_ASSERT(fabs(outs_l[0] - 43.5L) < 1e-6L);
+        SYMENGINE_C_ASSERT(fabs(outs_l[1] - 45.0L) < 1e-6L);
+#endif
 #endif
     }
     basic_free_stack(two);

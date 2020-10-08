@@ -1,3 +1,6 @@
+#ifndef SYMENGINE_CONFIG_HPP
+#define SYMENGINE_CONFIG_HPP
+
 #define SYMENGINE_MAJOR_VERSION ${SYMENGINE_MAJOR_VERSION}
 #define SYMENGINE_MINOR_VERSION ${SYMENGINE_MINOR_VERSION}
 #define SYMENGINE_PATCH_VERSION ${SYMENGINE_PATCH_VERSION}
@@ -69,9 +72,6 @@
 /* Define if the C++ compiler has std::to_string */
 #cmakedefine HAVE_SYMENGINE_STD_TO_STRING
 
-/* Define to use as a static library */
-#cmakedefine SYMENGINE_STATIC_DEFINE
-
 #define SYMENGINE_GMPXX 0
 #define SYMENGINE_PIRANHA 1
 #define SYMENGINE_FLINT 2
@@ -80,6 +80,8 @@
 
 #define SYMENGINE_INTEGER_CLASS SYMENGINE_${SYMENGINE_INTEGER_CLASS}
 
+#define SYMENGINE_SIZEOF_LONG_DOUBLE ${SYMENGINE_SIZEOF_LONG_DOUBLE}
+
 #ifdef HAVE_SYMENGINE_NOEXCEPT
 #  define SYMENGINE_NOEXCEPT noexcept
 #else
@@ -87,3 +89,9 @@
 #endif
 
 #include <symengine/symengine_export.h>
+
+#ifdef __CLING__
+#include "symengine/symengine_config_cling.h"
+#endif
+
+#endif

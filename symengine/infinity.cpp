@@ -50,7 +50,7 @@ bool Infty::is_canonical(const RCP<const Number> &num) const
 
 hash_t Infty::__hash__() const
 {
-    hash_t seed = INFTY;
+    hash_t seed = SYMENGINE_INFTY;
     hash_combine<Basic>(seed, *_direction);
     return seed;
 }
@@ -488,6 +488,18 @@ class EvaluateInfty : public Evaluate
             return NegInf;
         } else {
             throw DomainError("ceiling is not defined for Complex Infinity");
+        }
+    }
+    virtual RCP<const Basic> truncate(const Basic &x) const override
+    {
+        SYMENGINE_ASSERT(is_a<Infty>(x))
+        const Infty &s = down_cast<const Infty &>(x);
+        if (s.is_positive()) {
+            return Inf;
+        } else if (s.is_negative()) {
+            return NegInf;
+        } else {
+            throw DomainError("truncate is not defined for Complex Infinity");
         }
     }
     virtual RCP<const Basic> erf(const Basic &x) const override

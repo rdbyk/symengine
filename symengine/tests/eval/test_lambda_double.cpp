@@ -3,15 +3,27 @@
 
 #include <symengine/lambda_double.h>
 #include <symengine/symengine_exception.h>
+#include <symengine/eval.h>
+#include <symengine/rational.h>
 
 #ifdef HAVE_SYMENGINE_LLVM
 #include <symengine/llvm_double.h>
+#include <symengine/eval_mpfr.h>
 using SymEngine::LLVMDoubleVisitor;
+using SymEngine::LLVMFloatVisitor;
+
+#ifdef HAVE_SYMENGINE_MPFR
+using SymEngine::RealMPFR;
+#endif
 #endif
 
+using SymEngine::evalf;
+using SymEngine::down_cast;
+using SymEngine::rational;
 using SymEngine::Basic;
 using SymEngine::RCP;
 using SymEngine::real_double;
+using SymEngine::map_basic_basic;
 using SymEngine::symbol;
 using SymEngine::add;
 using SymEngine::mul;
@@ -24,6 +36,7 @@ using SymEngine::boolTrue;
 using SymEngine::LambdaRealDoubleVisitor;
 using SymEngine::LambdaComplexDoubleVisitor;
 using SymEngine::max;
+using SymEngine::pi;
 using SymEngine::sin;
 using SymEngine::cos;
 using SymEngine::tan;
@@ -49,6 +62,10 @@ using SymEngine::acoth;
 using SymEngine::acsch;
 using SymEngine::asech;
 using SymEngine::atan2;
+using SymEngine::sign;
+using SymEngine::floor;
+using SymEngine::ceiling;
+using SymEngine::truncate;
 using SymEngine::log;
 using SymEngine::E;
 using SymEngine::Catalan;
@@ -60,6 +77,7 @@ using SymEngine::Eq;
 using SymEngine::Ne;
 using SymEngine::Lt;
 using SymEngine::Le;
+using SymEngine::logical_and;
 using SymEngine::NotImplementedError;
 using SymEngine::SymEngineException;
 
@@ -97,10 +115,10 @@ TEST_CASE("Evaluate to double", "[lambda_double]")
     // Evaluating to double when there are complex doubles raise an exception
     CHECK_THROWS_AS(
         v.init({x}, *add(complex_double(std::complex<double>(1, 2)), x)),
-        NotImplementedError);
+        NotImplementedError &);
 
     // Undefined symbols raise an exception
-    CHECK_THROWS_AS(v.init({x}, *r), SymEngineException);
+    CHECK_THROWS_AS(v.init({x}, *r), SymEngineException &);
 
     // Piecewise
     auto int1 = interval(NegInf, integer(2), true, false);
@@ -163,7 +181,7 @@ TEST_CASE("Evaluate to std::complex<double>", "[lambda_complex_double]")
     REQUIRE(::fabs(d.imag() - 0.0) < 1e-12);
 
     // Undefined symbols raise an exception
-    CHECK_THROWS_AS(v.init({x}, *r), SymEngineException);
+    CHECK_THROWS_AS(v.init({x}, *r), SymEngineException &);
 }
 
 TEST_CASE("Evaluate functions", "[lambda_gamma]")
@@ -223,66 +241,117 @@ TEST_CASE("Evaluate functions", "[lambda_gamma]")
 #ifdef HAVE_SYMENGINE_LLVM
 TEST_CASE("Check llvm and lambda are equal", "[llvm_double]")
 {
-    RCP<const Basic> x, y, z, r;
+
+    RCP<const Basic> x, y, z, r, a, b;
     double d, d2, d3;
     x = symbol("x");
     y = symbol("y");
     z = symbol("z");
 
-    vec_basic vec = {log(x),   abs(x),      tan(x),   sinh(x), cosh(x), tanh(x),
-                     asinh(y), acosh(y),    atanh(x), asin(x), acos(x), atan(x),
-                     gamma(x), loggamma(x), erf(x),   erfc(x)};
+    a = add(x, z);
+    b = add(y, z);
 
-    r = mul(add(sin(x), add(mul(pow(y, integer(4)), mul(z, integer(2))),
-                            pow(sin(x), integer(2)))),
-            add(vec));
-    for (int i = 0; i < 4; ++i) {
-        r = mul(add(pow(integer(2), E), add(r, pow(x, pow(E, cos(x))))), r);
+    vec_basic exprs = {
+        log(a),   abs(a),      tan(a),      sinh(a),     cosh(a),    tanh(a),
+        asinh(b), acosh(b),    atanh(a),    asin(a),     acos(a),    atan(a),
+        gamma(a), loggamma(a), erf(a),      erfc(a),     floor(a),   ceiling(a),
+        sign(a),  max({a, b}), min({a, b}), atan2(a, b), truncate(a)};
+
+    for (unsigned i = 0; i < exprs.size(); i++) {
+        exprs[i] = add(exprs[i], z);
     }
 
-    // r = add(add(x, y), pow(add(x, y), integer(2)));
+    r = add(sin(x), add(mul(pow(y, integer(4)), mul(z, integer(2))),
+                        pow(sin(x), integer(2))));
+    exprs.push_back(r);
+    exprs.push_back(neg(abs(z)));
 
-    LambdaRealDoubleVisitor v;
-    v.init({x, y, z}, *r);
+    // Piecewise
+    auto int1 = interval(NegInf, integer(2), true, false);
+    auto int2 = interval(integer(2), integer(5), true, false);
 
-    LLVMDoubleVisitor v2;
-    v2.init({x, y, z}, *r);
+    SymEngine::set_boolean s = {Lt(x, integer(6)), Gt(x, integer(5))};
+    r = add(z, piecewise({{x, contains(x, int1)},
+                          {y, contains(x, int2)},
+                          {z, Ge(x, integer(7))},
+                          {a, logical_and(s)},
+                          {add(x, y), boolTrue}}));
+    exprs.push_back(r);
 
-    LLVMDoubleVisitor v3;
+    for (auto &expr : exprs) {
+        LambdaRealDoubleVisitor v;
+        v.init({x, y, z}, *expr);
+
+        LLVMDoubleVisitor v2;
+        v2.init({x, y, z}, *expr);
+
+        LLVMDoubleVisitor v3;
+        bool symbolic_cse = true;
+        int opt_level = 3;
+        v3.init({x, y, z}, *expr, symbolic_cse, opt_level);
+
+        d = v.call({1.4, 3.0, -1.0});
+        d2 = v2.call({1.4, 3.0, -1.0});
+        d3 = v3.call({1.4, 3.0, -1.0});
+        REQUIRE(::fabs((d - d2)) < 1e-12);
+        REQUIRE(::fabs((d - d3)) < 1e-12);
+    }
+}
+
+TEST_CASE("Check llvm with opt_level 0-3 is equal to llvm without opt_level",
+          "[llvm_double]")
+{
+
+    RCP<const Basic> x, y, z, r, a, b;
+    double d, d2, d3;
+    x = symbol("x");
+    y = symbol("y");
+    z = symbol("z");
+
+    a = add(x, z);
+    b = add(y, z);
+
+    vec_basic exprs = {
+        log(a),   abs(a),      tan(a),      sinh(a),     cosh(a),    tanh(a),
+        asinh(b), acosh(b),    atanh(a),    asin(a),     acos(a),    atan(a),
+        gamma(a), loggamma(a), erf(a),      erfc(a),     floor(a),   ceiling(a),
+        sign(a),  max({a, b}), min({a, b}), atan2(a, b), truncate(a)};
+
+    for (unsigned i = 0; i < exprs.size(); i++) {
+        exprs[i] = add(exprs[i], z);
+    }
+
+    r = add(sin(x), add(mul(pow(y, integer(4)), mul(z, integer(2))),
+                        pow(sin(x), integer(2))));
+    exprs.push_back(r);
+    exprs.push_back(neg(abs(z)));
+
+    // Piecewise
+    auto int1 = interval(NegInf, integer(2), true, false);
+    auto int2 = interval(integer(2), integer(5), true, false);
+
+    SymEngine::set_boolean s = {Lt(x, integer(6)), Gt(x, integer(5))};
+    r = add(z, piecewise({{x, contains(x, int1)},
+                          {y, contains(x, int2)},
+                          {z, Ge(x, integer(7))},
+                          {a, logical_and(s)},
+                          {add(x, y), boolTrue}}));
+    exprs.push_back(r);
+
     bool symbolic_cse = true;
-    int opt_level = 3;
-    v3.init({x, y, z}, *r, symbolic_cse, opt_level);
+    for (auto &expr : exprs) {
+        LLVMDoubleVisitor v;
+        v.init({x, y, z}, *expr, symbolic_cse);
 
-    auto t1 = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 500; i++) {
-        d = v.call({0.4, 2.0, 3.0});
+        for (int opt_level = 0; opt_level < 4; ++opt_level) {
+            LLVMDoubleVisitor v2;
+            v2.init({x, y, z}, *expr, symbolic_cse, opt_level);
+
+            d = v.call({1.4, 3.0, -1.0});
+            d2 = v2.call({1.4, 3.0, -1.0});
+            REQUIRE(::fabs((d - d2)) < 1e-12);
+        }
     }
-    auto t2 = std::chrono::high_resolution_clock::now();
-    std::cout << std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1)
-                     .count()
-              << "us" << std::endl;
-
-    t1 = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 500; i++) {
-        d2 = v2.call({0.4, 2.0, 3.0});
-    }
-    t2 = std::chrono::high_resolution_clock::now();
-    std::cout << std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1)
-                     .count()
-              << "us" << std::endl;
-
-    t1 = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 500; i++) {
-        d3 = v3.call({0.4, 2.0, 3.0});
-    }
-    t2 = std::chrono::high_resolution_clock::now();
-    std::cout << std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1)
-                     .count()
-              << "us" << std::endl;
-
-    std::cout << d << " " << d2 << " " << d3 << std::endl;
-    REQUIRE(::fabs((d - d2) / d) < 1e-12);
-    REQUIRE(::fabs((d - d3) / d) < 1e-12);
 }
 
 TEST_CASE("Check llvm save and load", "[llvm_double]")
@@ -330,6 +399,14 @@ TEST_CASE("Check llvm save and load", "[llvm_double]")
     d = v.call({0.4, 2.0, 3.0});
     d2 = v2.call({0.4, 2.0, 3.0});
     REQUIRE(::fabs((d - d2) / d) < 1e-12);
+
+    // Test that dumping and loading on a loaded object also works
+    auto &s2 = v2.dumps();
+    LLVMDoubleVisitor v3;
+    v3.loads(s2);
+
+    d3 = v3.call({0.4, 2.0, 3.0});
+    REQUIRE(::fabs((d - d3) / d) < 1e-12);
 }
 
 TEST_CASE("Check that our default LLVM passes give correct results",
@@ -337,13 +414,28 @@ TEST_CASE("Check that our default LLVM passes give correct results",
 {
     RCP<const Basic> x, y, z, r;
     double d, d2;
+    float d4;
     x = symbol("x");
     y = symbol("y");
     z = symbol("z");
 
-    vec_basic vec = {log(x),   abs(x),      tan(x),   sinh(x), cosh(x), tanh(x),
-                     asinh(y), acosh(y),    atanh(x), asin(x), acos(x), atan(x),
-                     gamma(x), loggamma(x), erf(x),   erfc(x)};
+    vec_basic vec = {log(x),
+                     abs(x),
+                     tan(x),
+                     sinh(x),
+                     cosh(x),
+                     tanh(x),
+                     asinh(y),
+                     acosh(y),
+                     atanh(x),
+                     asin(x),
+                     acos(x),
+                     atan(x),
+                     gamma(x),
+                     loggamma(x),
+                     erf(x),
+                     erfc(x),
+                     add(pi, div(integer(1), integer(3)))};
 
     r = mul(add(sin(x), add(mul(pow(y, integer(4)), mul(z, integer(2))),
                             pow(sin(x), integer(2)))),
@@ -356,13 +448,45 @@ TEST_CASE("Check that our default LLVM passes give correct results",
 
     LambdaRealDoubleVisitor v;
     v.init({x, y, z}, *r);
+    LLVMDoubleVisitor v2;
     for (int opt_level = 0; opt_level < 4; ++opt_level) {
-        LLVMDoubleVisitor v2;
         v2.init({x, y, z}, *r, false,
-                LLVMDoubleVisitor::create_default_passes(opt_level));
+                LLVMDoubleVisitor::create_default_passes(opt_level), opt_level);
         d = v.call({0.4, 2.0, 3.0});
         d2 = v2.call({0.4, 2.0, 3.0});
+        // Check for 12 digits with doubles
         REQUIRE(::fabs((d - d2) / d) < 1e-12);
     }
+#ifdef SYMENGINE_HAVE_LLVM_LONG_DOUBLE
+    SymEngine::LLVMLongDoubleVisitor v3;
+    long double d3, mpfr_d;
+#endif
+    LLVMFloatVisitor v4;
+    for (auto &arg : vec) {
+        v.init({x, y, z}, *arg);
+        d = v.call({0.4, 2.0, 3.0});
+        v4.init({x, y, z}, *arg);
+        d4 = v4.call({0.4f, 2.0f, 3.0f});
+        // Check only for 6 digits with floats
+        REQUIRE(::fabs((d - d4) / d) < 1e-6);
+#if defined(SYMENGINE_HAVE_LLVM_LONG_DOUBLE) && defined(HAVE_SYMENGINE_MPFR)
+        v3.init({x, y, z}, *arg);
+        d3 = v3.call({0.4l, 2.0l, 3.0l});
+        map_basic_basic subs_dict = {
+            {x, evalf(*rational(4, 10), 128, SymEngine::EvalfDomain::Real)},
+            {y, evalf(*integer(2), 128, SymEngine::EvalfDomain::Real)},
+            {z, evalf(*integer(3), 128, SymEngine::EvalfDomain::Real)},
+        };
+        SymEngine::mpfr_class mc
+            = down_cast<const RealMPFR &>(*evalf(*arg->subs(subs_dict), 128,
+                                                 SymEngine::EvalfDomain::Real))
+                  .as_mpfr();
+        mpfr_d = mpfr_get_ld(mc.get_mpfr_t(), MPFR_RNDN);
+        // Check for 16 digits with long doubles
+        REQUIRE(::fabsl((mpfr_d - d3) / mpfr_d) < 1e-16);
+#endif
+    }
+    v4.init({x, y, z}, *r);
+    REQUIRE(std::isinf(v4.call({0.4f, 2.0f, 3.0f})));
 }
 #endif

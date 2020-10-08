@@ -11,7 +11,7 @@ NaN::NaN()
 
 hash_t NaN::__hash__() const
 {
-    hash_t seed = NOT_A_NUMBER;
+    hash_t seed = SYMENGINE_NOT_A_NUMBER;
     return seed;
 }
 
@@ -207,6 +207,11 @@ class EvaluateNaN : public Evaluate
         return Nan;
     }
     virtual RCP<const Basic> ceiling(const Basic &x) const override
+    {
+        SYMENGINE_ASSERT(is_a<NaN>(x))
+        return Nan;
+    }
+    virtual RCP<const Basic> truncate(const Basic &x) const override
     {
         SYMENGINE_ASSERT(is_a<NaN>(x))
         return Nan;

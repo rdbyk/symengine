@@ -12,11 +12,11 @@ UExprPoly::UExprPoly(const RCP<const Basic> &var, UExprDict &&dict)
 
 hash_t UExprPoly::__hash__() const
 {
-    hash_t seed = UEXPRPOLY;
+    hash_t seed = SYMENGINE_UEXPRPOLY;
 
     seed += get_var()->hash();
     for (const auto &it : get_poly().dict_) {
-        hash_t temp = UEXPRPOLY;
+        hash_t temp = SYMENGINE_UEXPRPOLY;
         hash_combine<unsigned int>(temp, it.first);
         hash_combine<Basic>(temp, *(it.second.get_basic()));
         seed += temp;
@@ -38,7 +38,7 @@ Expression UExprPoly::eval(const Expression &x) const
     Expression ans = 0;
     for (const auto &p : get_poly().get_dict()) {
         Expression temp;
-        temp = pow_ex(x, Expression(p.first));
+        temp = pow(x, Expression(p.first));
         ans += p.second * temp;
     }
     return ans;

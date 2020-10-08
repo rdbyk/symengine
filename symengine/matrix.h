@@ -13,6 +13,11 @@ class MatrixBase
 public:
     virtual ~MatrixBase(){};
 
+    bool is_square() const
+    {
+        return ncols() == nrows();
+    }
+
     // Below methods should be implemented by the derived classes. If not
     // applicable, raise an exception
 
@@ -41,6 +46,10 @@ public:
     virtual void mul_matrix(const MatrixBase &other,
                             MatrixBase &result) const = 0;
 
+    // Matrix elementwise Multiplication
+    virtual void elementwise_mul_matrix(const MatrixBase &other,
+                                        MatrixBase &result) const = 0;
+
     // Add a scalar
     virtual void add_scalar(const RCP<const Basic> &k,
                             MatrixBase &result) const = 0;
@@ -49,8 +58,14 @@ public:
     virtual void mul_scalar(const RCP<const Basic> &k,
                             MatrixBase &result) const = 0;
 
+    // Matrix conjugate
+    virtual void conjugate(MatrixBase &result) const = 0;
+
     // Matrix transpose
     virtual void transpose(MatrixBase &result) const = 0;
+
+    // Matrix conjugate transpose
+    virtual void conjugate_transpose(MatrixBase &result) const = 0;
 
     // Extract out a submatrix
     virtual void submatrix(MatrixBase &result, unsigned row_start,
@@ -69,6 +84,12 @@ public:
     // Fraction free LDU factorization
     virtual void FFLDU(MatrixBase &L, MatrixBase &D, MatrixBase &U) const = 0;
 
+    // QR factorization
+    virtual void QR(MatrixBase &Q, MatrixBase &R) const = 0;
+
+    // Cholesky decomposition
+    virtual void cholesky(MatrixBase &L) const = 0;
+
     // Solve Ax = b using LU factorization
     virtual void LU_solve(const MatrixBase &b, MatrixBase &x) const = 0;
 };
@@ -83,10 +104,11 @@ class DenseMatrix : public MatrixBase
 public:
     // Constructors
     DenseMatrix();
-    DenseMatrix(const DenseMatrix &);
+    DenseMatrix(const DenseMatrix &) = default;
     DenseMatrix(unsigned row, unsigned col);
     DenseMatrix(unsigned row, unsigned col, const vec_basic &l);
     DenseMatrix(const vec_basic &column_elements);
+    DenseMatrix &operator=(const DenseMatrix &other) = default;
     // Resize
     void resize(unsigned i, unsigned j);
 
@@ -117,6 +139,10 @@ public:
     // Matrix multiplication
     virtual void mul_matrix(const MatrixBase &other, MatrixBase &result) const;
 
+    // Matrix elementwise Multiplication
+    virtual void elementwise_mul_matrix(const MatrixBase &other,
+                                        MatrixBase &result) const;
+
     // Add a scalar
     virtual void add_scalar(const RCP<const Basic> &k,
                             MatrixBase &result) const;
@@ -125,8 +151,14 @@ public:
     virtual void mul_scalar(const RCP<const Basic> &k,
                             MatrixBase &result) const;
 
+    // Matrix conjugate
+    virtual void conjugate(MatrixBase &result) const;
+
     // Matrix transpose
     virtual void transpose(MatrixBase &result) const;
+
+    // Matrix conjugate transpose
+    virtual void conjugate_transpose(MatrixBase &result) const;
 
     // Extract out a submatrix
     virtual void submatrix(MatrixBase &result, unsigned row_start,
@@ -149,19 +181,25 @@ public:
     // Fraction free LDU factorization
     virtual void FFLDU(MatrixBase &L, MatrixBase &D, MatrixBase &U) const;
 
+    // QR factorization
+    virtual void QR(MatrixBase &Q, MatrixBase &R) const;
+
+    // Cholesky decomposition
+    virtual void cholesky(MatrixBase &L) const;
+
     // Return the Jacobian of the matrix
     friend void jacobian(const DenseMatrix &A, const DenseMatrix &x,
-                         DenseMatrix &result);
+                         DenseMatrix &result, bool diff_cache);
     // Return the Jacobian of the matrix using sdiff
     friend void sjacobian(const DenseMatrix &A, const DenseMatrix &x,
-                          DenseMatrix &result);
+                          DenseMatrix &result, bool diff_cache);
 
     // Differentiate the matrix element-wise
     friend void diff(const DenseMatrix &A, const RCP<const Symbol> &x,
-                     DenseMatrix &result);
+                     DenseMatrix &result, bool diff_cache);
     // Differentiate the matrix element-wise using SymPy compatible diff
     friend void sdiff(const DenseMatrix &A, const RCP<const Basic> &x,
-                      DenseMatrix &result);
+                      DenseMatrix &result, bool diff_cache);
 
     // Friend functions related to Matrix Operations
     friend void add_dense_dense(const DenseMatrix &A, const DenseMatrix &B,
@@ -170,9 +208,14 @@ public:
                                  const RCP<const Basic> &k, DenseMatrix &B);
     friend void mul_dense_dense(const DenseMatrix &A, const DenseMatrix &B,
                                 DenseMatrix &C);
+    friend void elementwise_mul_dense_dense(const DenseMatrix &A,
+                                            const DenseMatrix &B,
+                                            DenseMatrix &C);
     friend void mul_dense_scalar(const DenseMatrix &A,
                                  const RCP<const Basic> &k, DenseMatrix &C);
+    friend void conjugate_dense(const DenseMatrix &A, DenseMatrix &B);
     friend void transpose_dense(const DenseMatrix &A, DenseMatrix &B);
+    friend void conjugate_transpose_dense(const DenseMatrix &A, DenseMatrix &B);
     friend void submatrix_dense(const DenseMatrix &A, DenseMatrix &B,
                                 unsigned row_start, unsigned col_start,
                                 unsigned row_end, unsigned col_end,
@@ -211,6 +254,10 @@ public:
     friend void pivoted_fraction_free_gauss_jordan_elimination(
         const DenseMatrix &A, DenseMatrix &B, permutelist &pivotlist);
     friend unsigned pivot(DenseMatrix &B, unsigned r, unsigned c);
+
+    friend void reduced_row_echelon_form(const DenseMatrix &A, DenseMatrix &B,
+                                         vec_uint &pivot_cols,
+                                         bool normalize_last);
 
     // Ax = b
     friend void diagonal_solve(const DenseMatrix &A, const DenseMatrix &b,
@@ -315,6 +362,10 @@ public:
     // Matrix Multiplication
     virtual void mul_matrix(const MatrixBase &other, MatrixBase &result) const;
 
+    // Matrix elementwise Multiplication
+    virtual void elementwise_mul_matrix(const MatrixBase &other,
+                                        MatrixBase &result) const;
+
     // Add a scalar
     virtual void add_scalar(const RCP<const Basic> &k,
                             MatrixBase &result) const;
@@ -323,9 +374,15 @@ public:
     virtual void mul_scalar(const RCP<const Basic> &k,
                             MatrixBase &result) const;
 
+    // Matrix conjugate
+    virtual void conjugate(MatrixBase &result) const;
+
     // Matrix transpose
     virtual void transpose(MatrixBase &result) const;
-    CSRMatrix transpose() const;
+    CSRMatrix transpose(bool conjugate = false) const;
+
+    // Matrix conjugate transpose
+    virtual void conjugate_transpose(MatrixBase &result) const;
 
     // Extract out a submatrix
     virtual void submatrix(MatrixBase &result, unsigned row_start,
@@ -347,6 +404,12 @@ public:
 
     // Fraction free LDU factorization
     virtual void FFLDU(MatrixBase &L, MatrixBase &D, MatrixBase &U) const;
+
+    // QR factorization
+    virtual void QR(MatrixBase &Q, MatrixBase &R) const;
+
+    // Cholesky decomposition
+    virtual void cholesky(MatrixBase &L) const;
 
     static void csr_sum_duplicates(std::vector<unsigned> &p_,
                                    std::vector<unsigned> &j_, vec_basic &x_,
@@ -372,8 +435,10 @@ public:
                               const std::vector<unsigned> &i,
                               const std::vector<unsigned> &j,
                               const vec_basic &x);
-    static CSRMatrix jacobian(const vec_basic &exprs, const vec_sym &x);
-    static CSRMatrix jacobian(const DenseMatrix &A, const DenseMatrix &x);
+    static CSRMatrix jacobian(const vec_basic &exprs, const vec_sym &x,
+                              bool diff_cache = true);
+    static CSRMatrix jacobian(const DenseMatrix &A, const DenseMatrix &x,
+                              bool diff_cache = true);
 
     friend void csr_matmat_pass1(const CSRMatrix &A, const CSRMatrix &B,
                                  CSRMatrix &C);
@@ -398,16 +463,18 @@ private:
 };
 
 // Return the Jacobian of the matrix
-void jacobian(const DenseMatrix &A, const DenseMatrix &x, DenseMatrix &result);
+void jacobian(const DenseMatrix &A, const DenseMatrix &x, DenseMatrix &result,
+              bool diff_cache = true);
 // Return the Jacobian of the matrix using sdiff
-void sjacobian(const DenseMatrix &A, const DenseMatrix &x, DenseMatrix &result);
+void sjacobian(const DenseMatrix &A, const DenseMatrix &x, DenseMatrix &result,
+               bool diff_cache = true);
 
 // Differentiate all the elements
-void diff(const DenseMatrix &A, const RCP<const Symbol> &x,
-          DenseMatrix &result);
+void diff(const DenseMatrix &A, const RCP<const Symbol> &x, DenseMatrix &result,
+          bool diff_cache = true);
 // Differentiate all the elements using SymPy compatible diff
-void sdiff(const DenseMatrix &A, const RCP<const Basic> &x,
-           DenseMatrix &result);
+void sdiff(const DenseMatrix &A, const RCP<const Basic> &x, DenseMatrix &result,
+           bool diff_cache = true);
 
 // Get submatrix from a DenseMatrix
 void submatrix_dense(const DenseMatrix &A, DenseMatrix &B, unsigned row_start,
@@ -429,8 +496,9 @@ void cross(const DenseMatrix &A, const DenseMatrix &B, DenseMatrix &C);
 
 // Matrix Factorization
 void LU(const DenseMatrix &A, DenseMatrix &L, DenseMatrix &U);
-
 void LDL(const DenseMatrix &A, DenseMatrix &L, DenseMatrix &D);
+void QR(const DenseMatrix &A, DenseMatrix &Q, DenseMatrix &R);
+void cholesky(const DenseMatrix &A, DenseMatrix &L);
 
 // Inverse
 void inverse_fraction_free_LU(const DenseMatrix &A, DenseMatrix &B);
@@ -472,6 +540,11 @@ void ones(DenseMatrix &A);
 
 // Create a matrix filled with zeros
 void zeros(DenseMatrix &A);
+
+// Reduced row echelon form and returns the cols with pivots
+void reduced_row_echelon_form(const DenseMatrix &A, DenseMatrix &B,
+                              vec_uint &pivot_cols,
+                              bool normalize_last = false);
 
 // Returns true if `b` is exactly the type T.
 // Here T can be a DenseMatrix, CSRMatrix, etc.

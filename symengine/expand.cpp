@@ -190,7 +190,7 @@ public:
 
     void square_expand(umap_basic_num &base_dict)
     {
-        long m = base_dict.size();
+        auto m = base_dict.size();
 #if defined(HAVE_SYMENGINE_RESERVE)
         d_.reserve(d_.size() + m * (m + 1) / 2);
 #endif
@@ -345,8 +345,9 @@ public:
                     _mulnum(c, rcp_static_cast<const Number>(term)));
         } else if (is_a<Add>(*term)) {
             for (const auto &q : (down_cast<const Add &>(*term)).get_dict())
-                Add::dict_add_term(d_, q.second, q.first);
-            iaddnum(outArg(coeff), down_cast<const Add &>(*term).get_coef());
+                Add::dict_add_term(d_, _mulnum(q.second, c), q.first);
+            iaddnum(outArg(coeff),
+                    _mulnum(down_cast<const Add &>(*term).get_coef(), c));
         } else {
             RCP<const Number> coef2;
             RCP<const Basic> t;

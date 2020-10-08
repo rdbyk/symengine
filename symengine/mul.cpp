@@ -56,7 +56,8 @@ bool Mul::is_canonical(const RCP<const Number> &coef,
         if (is_a<Mul>(*p.first)) {
             if (is_a<Integer>(*p.second))
                 return false;
-            if (neq(*down_cast<const Mul &>(*p.first).coef_, *one)
+            if (is_a_Number(*p.second)
+                and neq(*down_cast<const Mul &>(*p.first).coef_, *one)
                 and neq(*down_cast<const Mul &>(*p.first).coef_, *minus_one))
                 return false;
         }
@@ -76,7 +77,7 @@ bool Mul::is_canonical(const RCP<const Number> &coef,
 
 hash_t Mul::__hash__() const
 {
-    hash_t seed = MUL;
+    hash_t seed = SYMENGINE_MUL;
     hash_combine<Basic>(seed, *coef_);
     for (const auto &p : dict_) {
         hash_combine<Basic>(seed, *(p.first));
@@ -165,8 +166,7 @@ void Mul::dict_add_term(map_basic_basic &d, const RCP<const Basic> &exp,
         } else {
             // General case:
             it->second = add(it->second, exp);
-            if (is_a_Number(*it->second)
-                and down_cast<const Number &>(*(it->second)).is_zero()) {
+            if (is_zero(*it->second)) {
                 d.erase(it);
             }
         }
@@ -424,8 +424,8 @@ RCP<const Basic> mul(const vec_basic &a)
 
 RCP<const Basic> div(const RCP<const Basic> &a, const RCP<const Basic> &b)
 {
-    if (is_a_Number(*b) and down_cast<const Number &>(*b).is_zero()) {
-        if (is_a_Number(*a) and down_cast<const Number &>(*a).is_zero()) {
+    if (is_zero(*b)) {
+        if (is_zero(*a)) {
             return Nan;
         } else {
             return ComplexInf;
@@ -442,7 +442,7 @@ RCP<const Basic> neg(const RCP<const Basic> &a)
 void Mul::power_num(const Ptr<RCP<const Number>> &coef, map_basic_basic &d,
                     const RCP<const Number> &exp) const
 {
-    if (is_a_Number(*exp) and down_cast<const Number &>(*exp).is_zero()) {
+    if (exp->is_zero()) {
         // (x*y)**(0.0) should return 1.0
         imulnum(coef, pownum(rcp_static_cast<const Number>(exp), zero));
         return;
@@ -466,13 +466,13 @@ void Mul::power_num(const Ptr<RCP<const Number>> &coef, map_basic_basic &d,
         }
     } else {
         if (coef_->is_negative()) {
-            // (3*x*y)**(1/2) -> 3**(1/2)*(x*y)**(1/2)
+            // (-3*x*y)**(1/2) -> 3**(1/2)*(-x*y)**(1/2)
             new_coef = pow(coef_->mul(*minus_one), exp);
             map_basic_basic d1 = dict_;
             Mul::dict_add_term_new(coef, d, exp,
                                    Mul::from_dict(minus_one, std::move(d1)));
-        } else if (coef_->is_positive()) {
-            // (-3*x*y)**(1/2) -> 3**(1/2)*(-x*y)**(1/2)
+        } else if (coef_->is_positive() and not coef_->is_one()) {
+            // (3*x*y)**(1/2) -> 3**(1/2)*(x*y)**(1/2)
             new_coef = pow(coef_, exp);
             map_basic_basic d1 = dict_;
             Mul::dict_add_term_new(coef, d, exp,

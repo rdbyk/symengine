@@ -1,15 +1,16 @@
-#ifndef SYMENGINE_PRINTER_H
-#define SYMENGINE_PRINTER_H
+#ifndef SYMENGINE_STR_PRINTER_H
+#define SYMENGINE_STR_PRINTER_H
 
 #include <symengine/visitor.h>
+#include <symengine/printers.h>
 
 namespace SymEngine
 {
 
-std::string ascii_art();
 std::string print_double(double d);
+std::vector<std::string> init_str_printer_names();
 
-enum class PrecedenceEnum { Add, Mul, Pow, Atom };
+enum class PrecedenceEnum { Relational, Add, Mul, Pow, Atom };
 
 class Precedence : public BaseVisitor<Precedence>
 {
@@ -17,21 +18,10 @@ private:
     PrecedenceEnum precedence;
 
 public:
-    void bvisit(const Add &x)
-    {
-        precedence = PrecedenceEnum::Add;
-    }
-
-    void bvisit(const Mul &x)
-    {
-        precedence = PrecedenceEnum::Mul;
-    }
-
-    void bvisit(const Pow &x)
-    {
-        precedence = PrecedenceEnum::Pow;
-    }
-
+    void bvisit(const Add &x);
+    void bvisit(const Mul &x);
+    void bvisit(const Relational &x);
+    void bvisit(const Pow &x);
     template <typename Poly>
     void bvisit_upoly(const Poly &x)
     {
@@ -64,11 +54,7 @@ public:
         bvisit_upoly(down_cast<const Poly &>(x));
     }
 
-    void bvisit(const GaloisField &x)
-    {
-        // iterators need to be implemented
-        // bvisit_upoly(x);
-    }
+    void bvisit(const GaloisField &x);
 
     template <typename Container, typename Poly>
     void bvisit(const MSymEnginePoly<Container, Poly> &x)
@@ -98,99 +84,56 @@ public:
         }
     }
 
-    void bvisit(const Rational &x)
-    {
-        precedence = PrecedenceEnum::Add;
-    }
-
-    void bvisit(const Complex &x)
-    {
-        if (x.is_re_zero()) {
-            if (x.imaginary_ == 1) {
-                precedence = PrecedenceEnum::Atom;
-            } else {
-                precedence = PrecedenceEnum::Mul;
-            }
-        } else {
-            precedence = PrecedenceEnum::Add;
-        }
-    }
-
-    void bvisit(const Integer &x)
-    {
-        if (x.is_negative()) {
-            precedence = PrecedenceEnum::Mul;
-        } else {
-            precedence = PrecedenceEnum::Atom;
-        }
-    }
-
-    void bvisit(const RealDouble &x)
-    {
-        if (x.is_negative()) {
-            precedence = PrecedenceEnum::Mul;
-        } else {
-            precedence = PrecedenceEnum::Atom;
-        }
-    }
-
+    void bvisit(const Rational &x);
+    void bvisit(const Complex &x);
+    void bvisit(const Integer &x);
+    void bvisit(const RealDouble &x);
 #ifdef HAVE_SYMENGINE_PIRANHA
-    void bvisit(const URatPSeriesPiranha &x)
-    {
-        precedence = PrecedenceEnum::Add;
-    }
-
-    void bvisit(const UPSeriesPiranha &x)
-    {
-        precedence = PrecedenceEnum::Add;
-    }
+    void bvisit(const URatPSeriesPiranha &x);
+    void bvisit(const UPSeriesPiranha &x);
 #endif
-    void bvisit(const ComplexDouble &x)
-    {
-        precedence = PrecedenceEnum::Add;
-    }
+    void bvisit(const ComplexDouble &x);
 #ifdef HAVE_SYMENGINE_MPFR
-    void bvisit(const RealMPFR &x)
-    {
-        if (x.is_negative()) {
-            precedence = PrecedenceEnum::Mul;
-        } else {
-            precedence = PrecedenceEnum::Atom;
-        }
-    }
+    void bvisit(const RealMPFR &x);
 #endif
 #ifdef HAVE_SYMENGINE_MPC
-    void bvisit(const ComplexMPC &x)
-    {
-        precedence = PrecedenceEnum::Add;
-    }
+    void bvisit(const ComplexMPC &x);
 #endif
-
-    void bvisit(const Basic &x)
-    {
-        precedence = PrecedenceEnum::Atom;
-    }
-
-    PrecedenceEnum getPrecedence(const RCP<const Basic> &x)
-    {
-        (*x).accept(*this);
-        return precedence;
-    }
+    void bvisit(const Basic &x);
+    PrecedenceEnum getPrecedence(const RCP<const Basic> &x);
 };
+
+std::vector<std::string> init_str_printer_names();
 
 class StrPrinter : public BaseVisitor<StrPrinter>
 {
+private:
+    static const std::vector<std::string> names_;
+
 protected:
     std::string str_;
+    virtual std::string print_mul();
+    virtual bool split_mul_coef();
+    virtual void _print_pow(std::ostringstream &o, const RCP<const Basic> &a,
+                            const RCP<const Basic> &b);
+    virtual std::string print_div(const std::string &num,
+                                  const std::string &den, bool paren);
+    virtual std::string get_imag_symbol();
+    virtual std::string parenthesize(const std::string &expr);
+    std::string parenthesizeLT(const RCP<const Basic> &x,
+                               PrecedenceEnum precedenceEnum);
+    std::string parenthesizeLE(const RCP<const Basic> &x,
+                               PrecedenceEnum precedenceEnum);
 
 public:
-    static const std::vector<std::string> names_;
     void bvisit(const Basic &x);
     void bvisit(const Symbol &x);
     void bvisit(const Integer &x);
     void bvisit(const Rational &x);
     void bvisit(const Complex &x);
     void bvisit(const Interval &x);
+    void bvisit(const Reals &x);
+    void bvisit(const Integers &x);
     void bvisit(const Piecewise &x);
     void bvisit(const EmptySet &x);
     void bvisit(const FiniteSet &x);
@@ -227,7 +170,6 @@ public:
     void bvisit(const UIntPolyPiranha &x);
     void bvisit(const URatPolyPiranha &x);
 #endif
-    void bvisit(const Log &x);
     void bvisit(const Constant &x);
     void bvisit(const Function &x);
     void bvisit(const FunctionSymbol &x);
@@ -247,14 +189,6 @@ public:
 #endif
     void bvisit(const NumberWrapper &x);
 
-    virtual void _print_pow(std::ostringstream &o, const RCP<const Basic> &a,
-                            const RCP<const Basic> &b);
-
-    std::string parenthesizeLT(const RCP<const Basic> &x,
-                               PrecedenceEnum precedenceEnum);
-    std::string parenthesizeLE(const RCP<const Basic> &x,
-                               PrecedenceEnum precedenceEnum);
-
     std::string apply(const RCP<const Basic> &b);
     std::string apply(const vec_basic &v);
     std::string apply(const Basic &b);
@@ -266,10 +200,11 @@ public:
     using StrPrinter::bvisit;
     virtual void _print_pow(std::ostringstream &o, const RCP<const Basic> &a,
                             const RCP<const Basic> &b);
+    virtual std::string get_imag_symbol();
     void bvisit(const Constant &x);
     void bvisit(const NaN &x);
     void bvisit(const Infty &x);
 };
 }
 
-#endif // SYMENGINE_PRINTER_H
+#endif // SYMENGINE_STR_PRINTER_H

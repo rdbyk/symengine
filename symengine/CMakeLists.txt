@@ -6,6 +6,23 @@ if (WITH_SYMENGINE_TEUCHOS)
     include_directories(BEFORE ${teuchos_BINARY_DIR})
 endif()
 
+if (WITH_GENERATE_PARSER)
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/parser/parser.tab.cc
+                      COMMAND ${BISON_EXECUTABLE} -d parser.yy
+                      DEPENDS parser/parser.yy
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/parser
+                     )
+
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/parser/tokenizer.cpp
+                      COMMAND ${RE2C_EXECUTABLE} -W  --no-generation-date -b tokenizer.re -o tokenizer.cpp
+                      DEPENDS parser/tokenizer.re
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/parser
+                     )
+
+endif()
+
+add_subdirectory(utilities/matchpycpp)
+
 set(SRC
     add.cpp
     basic.cpp
@@ -35,14 +52,20 @@ set(SRC
     ntheory.cpp
     number.cpp
     numer_denom.cpp
-    parser.cpp
+    parser/parser_old.cpp
+    parser/parser.tab.cc
+    parser/parser.cpp
+    parser/tokenizer.cpp
     polys/basic_conversions.cpp
     polys/msymenginepoly.cpp
     polys/uexprpoly.cpp
     polys/uintpoly.cpp
     polys/uratpoly.cpp
     pow.cpp
-    printer.cpp
+    printers/codegen.cpp
+    printers/mathml.cpp
+    printers/strprinter.cpp
+    printers/latex.cpp
     rational.cpp
     real_double.cpp
     rewrite.cpp
@@ -97,7 +120,6 @@ set(HEADERS
     basic.h
     basic-inl.h
     basic-methods.inc
-    codegen.h
     complex_double.h
     complex.h
     complex_mpc.h
@@ -130,7 +152,11 @@ set(HEADERS
     ntheory.h
     number.h
     parser.h
+    parser/parser.h
+    parser/parser_stype.h
+    parser/tokenizer.h
     polys/basic_conversions.h
+    polys/cancel.h
     polys/uexprpoly.h
     polys/uintpoly_flint.h
     polys/uintpoly.h
@@ -140,7 +166,11 @@ set(HEADERS
     polys/usymenginepoly.h
     polys/msymenginepoly.h
     pow.h
-    printer.h
+    printers/codegen.h
+    printers/mathml.h
+    printers/strprinter.h
+    printers/latex.h
+    printers.h
     rational.h
     real_double.h
     real_mpfr.h
@@ -151,6 +181,7 @@ set(HEADERS
     series_piranha.h
     series_visitor.h
     sets.h
+    solve.h
     subs.h
     symbol.h
     symengine_assert.h
@@ -159,11 +190,16 @@ set(HEADERS
     symengine_rcp.h
     type_codes.inc
     visitor.h
-    solve.h
 )
 
+include(GNUInstallDirs)
+
 # Configure SymEngine using our CMake options:
+set(SYMENGINE_CLING_LIBRARY_DIR "\"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}\"")
+
 configure_file(symengine_config.h.in symengine_config.h)
+configure_file(symengine_config_cling.h.in symengine_config_cling.h)
+
 # Include the config file:
 include_directories(BEFORE ${symengine_BINARY_DIR})
 # Include the source directory
@@ -188,10 +224,22 @@ if (BUILD_SHARED_LIBS)
         VERSION ${SYMENGINE_VERSION}
         SOVERSION ${SYMENGINE_MAJOR_VERSION}.${SYMENGINE_MINOR_VERSION}
     )
+    if (WIN32)
+        set_target_properties(
+            symengine
+            PROPERTIES
+            RUNTIME_OUTPUT_NAME symengine-${SYMENGINE_MAJOR_VERSION}.${SYMENGINE_MINOR_VERSION}
+        )
+    endif()
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_target_properties(symengine PROPERTIES COMPILE_FLAGS "-Wconversion -Wno-sign-conversion")
+    set_source_files_properties(parser/parser.tab.cc PROPERTIES COMPILE_FLAGS "-Wno-conversion")
+endif()
+
+if (WITH_LLVM AND NOT ${LLVM_VERSION} VERSION_LESS "10.0.0")
+    set_target_properties(symengine PROPERTIES CXX_STANDARD 14 CXX_EXTENSIONS OFF CXX_STANDARD_REQUIRED yes)
 endif()
 
 if (WITH_SYMENGINE_TEUCHOS)
@@ -199,17 +247,30 @@ if (WITH_SYMENGINE_TEUCHOS)
 endif()
 target_link_libraries(symengine ${LIBS})
 
-include(GNUInstallDirs)
+if (WITH_LLVM AND NOT SYMENGINE_LLVM_LINK_DOWNSTREAM AND NOT WITH_SYMENGINE_TEUCHOS)
+    if (${EXCLUDE_LIBS})
+        set_property(TARGET symengine APPEND_STRING PROPERTY LINK_FLAGS "-Wl,--exclude-libs,ALL")
+    elseif (${UNEXPORTED_SYMBOL})
+        set(LLVM_SYMBOLS_AVOID "${LLVM_SYMBOLS_AVOID} -Wl,-unexported_symbol,__ZTVN4llvm* -Wl,-unexported_symbol,__ZNK4llvm*")
+        set(LLVM_SYMBOLS_AVOID "${LLVM_SYMBOLS_AVOID} -Wl,-unexported_symbol,__ZN4llvm* -Wl,-unexported_symbol,__ZTIN4llvm*")
+        set(LLVM_SYMBOLS_AVOID "${LLVM_SYMBOLS_AVOID} -Wl,-unexported_symbol,_LLVM* -Wl,-unexported_symbol,__ZTSN4llvm*")
+        set_property(TARGET symengine APPEND_STRING PROPERTY LINK_FLAGS "${LLVM_SYMBOLS_AVOID}")
+    endif()
+endif()
 
 install(TARGETS symengine
             EXPORT SymEngineTargets
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         )
-install(FILES "${symengine_BINARY_DIR}/symengine/symengine_config.h"
+install(FILES
+    "${symengine_BINARY_DIR}/symengine/symengine_config.h"
+    "${symengine_BINARY_DIR}/symengine/symengine_config_cling.h"
     "${symengine_BINARY_DIR}/symengine/symengine_export.h"
-    DESTINATION include/symengine)
+        DESTINATION
+    include/symengine)
 
 # make install
 macro(INSTALL_HEADERS_WITH_DIRECTORY HEADER_LIST)
@@ -224,4 +285,6 @@ INSTALL_HEADERS_WITH_DIRECTORY(HEADERS)
 if (BUILD_TESTS)
     add_subdirectory(utilities/catch)
     add_subdirectory(tests)
+    add_subdirectory(utilities/matchpycpp/tests)
+    add_subdirectory(utilities/matchpycpp/autogen_tests)
 endif()

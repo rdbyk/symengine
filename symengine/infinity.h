@@ -8,6 +8,7 @@
 
 #include <symengine/basic.h>
 #include <symengine/number.h>
+#include <symengine/integer.h>
 #include <symengine/mul.h>
 
 namespace SymEngine
@@ -21,7 +22,7 @@ class Infty : public Number
     RCP<const Number> _direction;
 
 public:
-    IMPLEMENT_TYPEID(INFTY)
+    IMPLEMENT_TYPEID(SYMENGINE_INFTY)
     //! Constructs Infty using the sign of `_direction`
     Infty(const RCP<const Number> &direction);
     //! Copy Constructor

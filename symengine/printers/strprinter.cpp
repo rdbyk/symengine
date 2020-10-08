@@ -1,5 +1,5 @@
 #include <limits>
-#include <symengine/printer.h>
+#include <symengine/printers/strprinter.h>
 
 namespace SymEngine
 {
@@ -23,6 +23,111 @@ std::string ascii_art()
                     "|_____|_  |_|_|_|_____|_|_|_  |_|_|_|___|\n"
                     "      |___|               |___|          \n";
     return a;
+}
+
+void Precedence::bvisit(const Add &x)
+{
+    precedence = PrecedenceEnum::Add;
+}
+
+void Precedence::bvisit(const Mul &x)
+{
+    precedence = PrecedenceEnum::Mul;
+}
+
+void Precedence::bvisit(const Relational &x)
+{
+    precedence = PrecedenceEnum::Relational;
+}
+
+void Precedence::bvisit(const Pow &x)
+{
+    precedence = PrecedenceEnum::Pow;
+}
+
+void Precedence::bvisit(const GaloisField &x)
+{
+    // iterators need to be implemented
+    // bvisit_upoly(x);
+}
+
+void Precedence::bvisit(const Rational &x)
+{
+    precedence = PrecedenceEnum::Add;
+}
+
+void Precedence::bvisit(const Complex &x)
+{
+    if (x.is_re_zero()) {
+        if (x.imaginary_ == 1) {
+            precedence = PrecedenceEnum::Atom;
+        } else {
+            precedence = PrecedenceEnum::Mul;
+        }
+    } else {
+        precedence = PrecedenceEnum::Add;
+    }
+}
+
+void Precedence::bvisit(const Integer &x)
+{
+    if (x.is_negative()) {
+        precedence = PrecedenceEnum::Mul;
+    } else {
+        precedence = PrecedenceEnum::Atom;
+    }
+}
+
+void Precedence::bvisit(const RealDouble &x)
+{
+    if (x.is_negative()) {
+        precedence = PrecedenceEnum::Mul;
+    } else {
+        precedence = PrecedenceEnum::Atom;
+    }
+}
+
+#ifdef HAVE_SYMENGINE_PIRANHA
+void Precedence::bvisit(const URatPSeriesPiranha &x)
+{
+    precedence = PrecedenceEnum::Add;
+}
+
+void Precedence::bvisit(const UPSeriesPiranha &x)
+{
+    precedence = PrecedenceEnum::Add;
+}
+#endif
+void Precedence::bvisit(const ComplexDouble &x)
+{
+    precedence = PrecedenceEnum::Add;
+}
+#ifdef HAVE_SYMENGINE_MPFR
+void Precedence::bvisit(const RealMPFR &x)
+{
+    if (x.is_negative()) {
+        precedence = PrecedenceEnum::Mul;
+    } else {
+        precedence = PrecedenceEnum::Atom;
+    }
+}
+#endif
+#ifdef HAVE_SYMENGINE_MPC
+void Precedence::bvisit(const ComplexMPC &x)
+{
+    precedence = PrecedenceEnum::Add;
+}
+#endif
+
+void Precedence::bvisit(const Basic &x)
+{
+    precedence = PrecedenceEnum::Atom;
+}
+
+PrecedenceEnum Precedence::getPrecedence(const RCP<const Basic> &x)
+{
+    (*x).accept(*this);
+    return precedence;
 }
 
 void StrPrinter::bvisit(const Basic &x)
@@ -85,19 +190,19 @@ void StrPrinter::bvisit(const Complex &x)
         // If imaginary_ is not 1 or -1, print the absolute value
         if (x.imaginary_ != mp_sign(x.imaginary_)) {
             s << mp_abs(x.imaginary_);
-            s << "*I";
+            s << print_mul() << get_imag_symbol();
         } else {
             s << "I";
         }
     } else {
         if (x.imaginary_ != mp_sign(x.imaginary_)) {
             s << x.imaginary_;
-            s << "*I";
+            s << print_mul() << get_imag_symbol();
         } else {
             if (mp_sign(x.imaginary_) == 1) {
-                s << "I";
+                s << get_imag_symbol();
             } else {
-                s << "-I";
+                s << "-" << get_imag_symbol();
             }
         }
     }
@@ -130,9 +235,11 @@ void StrPrinter::bvisit(const ComplexDouble &x)
 {
     str_ = print_double(x.i.real());
     if (x.i.imag() < 0) {
-        str_ += " - " + print_double(-x.i.imag()) + "*I";
+        str_ += " - " + print_double(-x.i.imag()) + print_mul()
+                + get_imag_symbol();
     } else {
-        str_ += " + " + print_double(x.i.imag()) + "*I";
+        str_ += " + " + print_double(x.i.imag()) + print_mul()
+                + get_imag_symbol();
     }
 }
 
@@ -265,6 +372,16 @@ void StrPrinter::bvisit(const Piecewise &x)
     str_ = s.str();
 }
 
+void StrPrinter::bvisit(const Reals &x)
+{
+    str_ = "Reals";
+}
+
+void StrPrinter::bvisit(const Integers &x)
+{
+    str_ = "Integers";
+}
+
 void StrPrinter::bvisit(const EmptySet &x)
 {
     str_ = "EmptySet";
@@ -362,9 +479,11 @@ void StrPrinter::bvisit(const ComplexMPC &x)
     if (imag->is_negative()) {
         std::string str = this->apply(imag);
         str = str.substr(1, str.length() - 1);
-        str_ = this->apply(x.real_part()) + " - " + str + "*I";
+        str_ = this->apply(x.real_part()) + " - " + str + print_mul()
+               + get_imag_symbol();
     } else {
-        str_ = this->apply(x.real_part()) + " + " + this->apply(imag) + "*I";
+        str_ = this->apply(x.real_part()) + " + " + this->apply(imag)
+               + print_mul() + get_imag_symbol();
     }
 }
 #endif
@@ -382,11 +501,11 @@ void StrPrinter::bvisit(const Add &x)
     for (const auto &p : dict) {
         std::string t;
         if (eq(*(p.second), *one)) {
-            t = this->apply(p.first);
+            t = parenthesizeLT(p.first, PrecedenceEnum::Add);
         } else if (eq(*(p.second), *minus_one)) {
             t = "-" + parenthesizeLT(p.first, PrecedenceEnum::Mul);
         } else {
-            t = parenthesizeLT(p.second, PrecedenceEnum::Mul) + "*"
+            t = parenthesizeLT(p.second, PrecedenceEnum::Mul) + print_mul()
                 + parenthesizeLT(p.first, PrecedenceEnum::Mul);
         }
 
@@ -427,8 +546,22 @@ void StrPrinter::bvisit(const Mul &x)
     if (eq(*(x.get_coef()), *minus_one)) {
         o << "-";
     } else if (neq(*(x.get_coef()), *one)) {
-        o << parenthesizeLT(x.get_coef(), PrecedenceEnum::Mul) << "*";
-        num = true;
+        if (not split_mul_coef()) {
+            o << parenthesizeLT(x.get_coef(), PrecedenceEnum::Mul)
+              << print_mul();
+            num = true;
+        } else {
+            RCP<const Basic> numer, denom;
+            as_numer_denom(x.get_coef(), outArg(numer), outArg(denom));
+            if (neq(*numer, *one)) {
+                num = true;
+                o << parenthesizeLT(numer, PrecedenceEnum::Mul) << print_mul();
+            }
+            if (neq(*denom, *one)) {
+                den++;
+                o2 << parenthesizeLT(denom, PrecedenceEnum::Mul) << print_mul();
+            }
+        }
     }
 
     for (const auto &p : x.get_dict()) {
@@ -440,7 +573,7 @@ void StrPrinter::bvisit(const Mul &x)
             } else {
                 _print_pow(o2, p.first, neg(p.second));
             }
-            o2 << "*";
+            o2 << print_mul();
             den++;
         } else {
             if (eq(*(p.second), *one)) {
@@ -448,13 +581,13 @@ void StrPrinter::bvisit(const Mul &x)
             } else {
                 _print_pow(o, p.first, p.second);
             }
-            o << "*";
+            o << print_mul();
             num = true;
         }
     }
 
     if (not num) {
-        o << "1*";
+        o << "1" << print_mul();
     }
 
     std::string s = o.str();
@@ -464,13 +597,28 @@ void StrPrinter::bvisit(const Mul &x)
         std::string s2 = o2.str();
         s2 = s2.substr(0, s2.size() - 1);
         if (den > 1) {
-            str_ = s + "/(" + s2 + ")";
+            str_ = print_div(s, s2, true);
         } else {
-            str_ = s + "/" + s2;
+            str_ = print_div(s, s2, false);
         }
     } else {
         str_ = s;
     }
+}
+
+std::string StrPrinter::print_div(const std::string &num,
+                                  const std::string &den, bool paren)
+{
+    if (paren) {
+        return num + "/" + parenthesize(den);
+    } else {
+        return num + "/" + den;
+    }
+}
+
+bool StrPrinter::split_mul_coef()
+{
+    return false;
 }
 
 void StrPrinter::bvisit(const Pow &x)
@@ -678,11 +826,6 @@ void StrPrinter::bvisit(const UPSeriesPiranha &x)
 }
 #endif
 
-void StrPrinter::bvisit(const Log &x)
-{
-    str_ = "log(" + this->apply(x.get_arg()) + ")";
-}
-
 void StrPrinter::bvisit(const Constant &x)
 {
     str_ = x.get_name();
@@ -704,9 +847,8 @@ void StrPrinter::bvisit(const Function &x)
 {
     std::ostringstream o;
     o << names_[x.get_type_code()];
-    o << "(";
     vec_basic vec = x.get_args();
-    o << this->apply(vec) << ")";
+    o << parenthesize(apply(vec));
     str_ = o.str();
 }
 
@@ -714,9 +856,8 @@ void StrPrinter::bvisit(const FunctionSymbol &x)
 {
     std::ostringstream o;
     o << x.get_name();
-    o << "(";
     vec_basic vec = x.get_args();
-    o << this->apply(vec) << ")";
+    o << parenthesize(apply(vec));
     str_ = o.str();
 }
 
@@ -855,9 +996,9 @@ std::string StrPrinter::parenthesizeLT(const RCP<const Basic> &x,
 {
     Precedence prec;
     if (prec.getPrecedence(x) < precedenceEnum) {
-        return "(" + this->apply(x) + ")";
+        return parenthesize(apply(x));
     } else {
-        return this->apply(x);
+        return apply(x);
     }
 }
 
@@ -866,10 +1007,15 @@ std::string StrPrinter::parenthesizeLE(const RCP<const Basic> &x,
 {
     Precedence prec;
     if (prec.getPrecedence(x) <= precedenceEnum) {
-        return "(" + this->apply(x) + ")";
+        return parenthesize(apply(x));
     } else {
-        return this->apply(x);
+        return apply(x);
     }
+}
+
+std::string StrPrinter::parenthesize(const std::string &x)
+{
+    return "(" + x + ")";
 }
 
 std::string StrPrinter::apply(const RCP<const Basic> &b)
@@ -888,55 +1034,64 @@ std::vector<std::string> init_str_printer_names()
 {
     std::vector<std::string> names;
     names.assign(TypeID_Count, "");
-    names[SIN] = "sin";
-    names[COS] = "cos";
-    names[TAN] = "tan";
-    names[COT] = "cot";
-    names[CSC] = "csc";
-    names[SEC] = "sec";
-    names[ASIN] = "asin";
-    names[ACOS] = "acos";
-    names[ASEC] = "asec";
-    names[ACSC] = "acsc";
-    names[ATAN] = "atan";
-    names[ACOT] = "acot";
-    names[ATAN2] = "atan2";
-    names[SINH] = "sinh";
-    names[CSCH] = "csch";
-    names[COSH] = "cosh";
-    names[SECH] = "sech";
-    names[TANH] = "tanh";
-    names[COTH] = "coth";
-    names[ASINH] = "asinh";
-    names[ACSCH] = "acsch";
-    names[ACOSH] = "acosh";
-    names[ATANH] = "atanh";
-    names[ACOTH] = "acoth";
-    names[ASECH] = "asech";
-    names[LAMBERTW] = "lambertw";
-    names[ZETA] = "zeta";
-    names[DIRICHLET_ETA] = "dirichlet_eta";
-    names[KRONECKERDELTA] = "kroneckerdelta";
-    names[LEVICIVITA] = "levicivita";
-    names[FLOOR] = "floor";
-    names[CEILING] = "ceiling";
-    names[ERF] = "erf";
-    names[ERFC] = "erfc";
-    names[LOWERGAMMA] = "lowergamma";
-    names[UPPERGAMMA] = "uppergamma";
-    names[UPPERGAMMA] = "beta";
-    names[LOGGAMMA] = "loggamma";
-    names[POLYGAMMA] = "polygamma";
-    names[GAMMA] = "gamma";
-    names[ABS] = "abs";
-    names[MAX] = "max";
-    names[MIN] = "min";
-    names[SIGN] = "sign";
-    names[CONJUGATE] = "conjugate";
+    names[SYMENGINE_SIN] = "sin";
+    names[SYMENGINE_COS] = "cos";
+    names[SYMENGINE_TAN] = "tan";
+    names[SYMENGINE_COT] = "cot";
+    names[SYMENGINE_CSC] = "csc";
+    names[SYMENGINE_SEC] = "sec";
+    names[SYMENGINE_ASIN] = "asin";
+    names[SYMENGINE_ACOS] = "acos";
+    names[SYMENGINE_ASEC] = "asec";
+    names[SYMENGINE_ACSC] = "acsc";
+    names[SYMENGINE_ATAN] = "atan";
+    names[SYMENGINE_ACOT] = "acot";
+    names[SYMENGINE_ATAN2] = "atan2";
+    names[SYMENGINE_SINH] = "sinh";
+    names[SYMENGINE_CSCH] = "csch";
+    names[SYMENGINE_COSH] = "cosh";
+    names[SYMENGINE_SECH] = "sech";
+    names[SYMENGINE_TANH] = "tanh";
+    names[SYMENGINE_COTH] = "coth";
+    names[SYMENGINE_ASINH] = "asinh";
+    names[SYMENGINE_ACSCH] = "acsch";
+    names[SYMENGINE_ACOSH] = "acosh";
+    names[SYMENGINE_ATANH] = "atanh";
+    names[SYMENGINE_ACOTH] = "acoth";
+    names[SYMENGINE_ASECH] = "asech";
+    names[SYMENGINE_LOG] = "log";
+    names[SYMENGINE_LAMBERTW] = "lambertw";
+    names[SYMENGINE_ZETA] = "zeta";
+    names[SYMENGINE_DIRICHLET_ETA] = "dirichlet_eta";
+    names[SYMENGINE_KRONECKERDELTA] = "kroneckerdelta";
+    names[SYMENGINE_LEVICIVITA] = "levicivita";
+    names[SYMENGINE_FLOOR] = "floor";
+    names[SYMENGINE_CEILING] = "ceiling";
+    names[SYMENGINE_TRUNCATE] = "truncate";
+    names[SYMENGINE_ERF] = "erf";
+    names[SYMENGINE_ERFC] = "erfc";
+    names[SYMENGINE_LOWERGAMMA] = "lowergamma";
+    names[SYMENGINE_UPPERGAMMA] = "uppergamma";
+    names[SYMENGINE_BETA] = "beta";
+    names[SYMENGINE_LOGGAMMA] = "loggamma";
+    names[SYMENGINE_LOG] = "log";
+    names[SYMENGINE_POLYGAMMA] = "polygamma";
+    names[SYMENGINE_GAMMA] = "gamma";
+    names[SYMENGINE_ABS] = "abs";
+    names[SYMENGINE_MAX] = "max";
+    names[SYMENGINE_MIN] = "min";
+    names[SYMENGINE_SIGN] = "sign";
+    names[SYMENGINE_CONJUGATE] = "conjugate";
+    names[SYMENGINE_UNEVALUATED_EXPR] = "";
     return names;
 }
 
 const std::vector<std::string> StrPrinter::names_ = init_str_printer_names();
+
+std::string StrPrinter::print_mul()
+{
+    return "*";
+}
 
 void JuliaStrPrinter::_print_pow(std::ostringstream &o,
                                  const RCP<const Basic> &a,
@@ -980,5 +1135,27 @@ void JuliaStrPrinter::bvisit(const Infty &x)
     else
         s << "zoo";
     str_ = s.str();
+}
+
+std::string JuliaStrPrinter::get_imag_symbol()
+{
+    return "im";
+}
+
+std::string StrPrinter::get_imag_symbol()
+{
+    return "I";
+}
+
+std::string str(const Basic &x)
+{
+    StrPrinter strPrinter;
+    return strPrinter.apply(x);
+}
+
+std::string julia_str(const Basic &x)
+{
+    JuliaStrPrinter strPrinter;
+    return strPrinter.apply(x);
 }
 }

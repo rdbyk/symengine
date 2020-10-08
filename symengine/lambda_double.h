@@ -348,6 +348,11 @@ public:
     {
         throw NotImplementedError("Not Implemented");
     };
+
+    void bvisit(const UnevaluatedExpr &x)
+    {
+        apply(*x.get_arg());
+    };
 };
 
 class LambdaRealDoubleVisitor
@@ -420,6 +425,63 @@ public:
         result_ = [=](const double *x) { return (lhs_(x) < rhs_(x)); };
     }
 
+    void bvisit(const And &x)
+    {
+        std::vector<fn> applys;
+        for (const auto &p : x.get_args()) {
+            applys.push_back(apply(*p));
+        }
+
+        result_ = [=](const double *x) {
+
+            bool result = bool(applys[0](x));
+            for (unsigned int i = 0; i < applys.size(); i++) {
+                result = result && bool(applys[i](x));
+            }
+            return double(result);
+        };
+    }
+
+    void bvisit(const Or &x)
+    {
+        std::vector<fn> applys;
+        for (const auto &p : x.get_args()) {
+            applys.push_back(apply(*p));
+        }
+
+        result_ = [=](const double *x) {
+
+            bool result = bool(applys[0](x));
+            for (unsigned int i = 0; i < applys.size(); i++) {
+                result = result || bool(applys[i](x));
+            }
+            return double(result);
+        };
+    }
+
+    void bvisit(const Xor &x)
+    {
+        std::vector<fn> applys;
+        for (const auto &p : x.get_args()) {
+            applys.push_back(apply(*p));
+        }
+
+        result_ = [=](const double *x) {
+
+            bool result = bool(applys[0](x));
+            for (unsigned int i = 0; i < applys.size(); i++) {
+                result = result != bool(applys[i](x));
+            }
+            return double(result);
+        };
+    }
+
+    void bvisit(const Not &x)
+    {
+        fn tmp = apply(*(x.get_arg()));
+        result_ = [=](const double *x) { return double(not bool(tmp(x))); };
+    }
+
     void bvisit(const Max &x)
     {
         std::vector<fn> applys;
@@ -452,6 +514,32 @@ public:
             }
             return result;
         };
+    };
+
+    void bvisit(const Sign &x)
+    {
+        fn tmp = apply(*(x.get_arg()));
+        result_ = [=](const double *x) {
+            return tmp(x) == 0.0 ? 0.0 : (tmp(x) < 0.0 ? -1.0 : 1.0);
+        };
+    };
+
+    void bvisit(const Floor &x)
+    {
+        fn tmp = apply(*(x.get_arg()));
+        result_ = [=](const double *x) { return std::floor(tmp(x)); };
+    };
+
+    void bvisit(const Ceiling &x)
+    {
+        fn tmp = apply(*(x.get_arg()));
+        result_ = [=](const double *x) { return std::ceil(tmp(x)); };
+    };
+
+    void bvisit(const Truncate &x)
+    {
+        fn tmp = apply(*(x.get_arg()));
+        result_ = [=](const double *x) { return std::trunc(tmp(x)); };
     };
 
     void bvisit(const Infty &x)
@@ -513,10 +601,10 @@ public:
 
     void bvisit(const Piecewise &pw)
     {
-        if (neq(*pw.get_vec().back().second, *boolTrue)) {
-            throw SymEngineException(
-                "LambdaDouble requires a (Expr, True) at the end of Piecewise");
-        }
+        SYMENGINE_ASSERT_MSG(
+            eq(*pw.get_vec().back().second, *boolTrue),
+            "LambdaDouble requires a (Expr, True) at the end of Piecewise");
+
         std::vector<fn> applys;
         std::vector<fn> preds;
         for (const auto &expr_pred : pw.get_vec()) {
@@ -529,6 +617,8 @@ public:
                     return applys[i](x);
                 }
             }
+            throw SymEngineException(
+                "Unexpectedly reached end of Piecewise function.");
         };
     }
 };

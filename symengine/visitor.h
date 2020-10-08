@@ -31,6 +31,7 @@ namespace SymEngine
 class Visitor
 {
 public:
+    virtual ~Visitor(){};
 #define SYMENGINE_ENUM(TypeID, Class) virtual void visit(const Class &) = 0;
 #include "symengine/type_codes.inc"
 #undef SYMENGINE_ENUM
@@ -44,7 +45,8 @@ class BaseVisitor : public Base
 {
 
 public:
-#if defined(__GNUC__) && __GNUC__ == 4 && __GNUC_MINOR__ < 8
+#if (defined(__GNUC__) && __GNUC__ == 4 && __GNUC_MINOR__ < 8                  \
+     || defined(__SUNPRO_CC))
     // Following two ctors can be replaced by `using Base::Base` if inheriting
     // constructors are allowed by the compiler. GCC 4.8 is the earliest
     // version supporting this.
@@ -90,17 +92,25 @@ void preorder_traversal_local_stop(const Basic &b, LocalStopVisitor &v);
 class HasSymbolVisitor : public BaseVisitor<HasSymbolVisitor, StopVisitor>
 {
 protected:
-    Ptr<const Symbol> x_;
+    Ptr<const Basic> x_;
     bool has_;
 
 public:
-    HasSymbolVisitor(Ptr<const Symbol> x) : x_(x)
+    HasSymbolVisitor(Ptr<const Basic> x) : x_(x)
     {
     }
 
     void bvisit(const Symbol &x)
     {
-        if (x_->__eq__(x)) {
+        if (eq(*x_, x)) {
+            has_ = true;
+            stop_ = true;
+        }
+    }
+
+    void bvisit(const FunctionSymbol &x)
+    {
+        if (eq(*x_, x)) {
             has_ = true;
             stop_ = true;
         }
@@ -117,7 +127,7 @@ public:
     }
 };
 
-bool has_symbol(const Basic &b, const Symbol &x);
+bool has_symbol(const Basic &b, const Basic &x);
 
 class CoeffVisitor : public BaseVisitor<CoeffVisitor, StopVisitor>
 {
@@ -141,6 +151,9 @@ public:
                 Add::coef_dict_add_term(outArg(coef), dict, p.second, coeff_);
             }
         }
+        if (eq(*zero, *n_)) {
+            iaddnum(outArg(coef), x.get_coef());
+        }
         coeff_ = Add::from_dict(coef, std::move(dict));
     }
 
@@ -154,13 +167,19 @@ public:
                 return;
             }
         }
-        coeff_ = zero;
+        if (eq(*zero, *n_) and not has_symbol(x, *x_)) {
+            coeff_ = x.rcp_from_this();
+        } else {
+            coeff_ = zero;
+        }
     }
 
     void bvisit(const Pow &x)
     {
         if (eq(*x.get_base(), *x_) and eq(*x.get_exp(), *n_)) {
             coeff_ = one;
+        } else if (neq(*x.get_base(), *x_) and eq(*zero, *n_)) {
+            coeff_ = x.rcp_from_this();
         } else {
             coeff_ = zero;
         }
@@ -170,6 +189,8 @@ public:
     {
         if (eq(x, *x_) and eq(*one, *n_)) {
             coeff_ = one;
+        } else if (neq(x, *x_) and eq(*zero, *n_)) {
+            coeff_ = x.rcp_from_this();
         } else {
             coeff_ = zero;
         }
@@ -179,6 +200,8 @@ public:
     {
         if (eq(x, *x_) and eq(*one, *n_)) {
             coeff_ = one;
+        } else if (neq(x, *x_) and eq(*zero, *n_)) {
+            coeff_ = x.rcp_from_this();
         } else {
             coeff_ = zero;
         }
@@ -186,7 +209,15 @@ public:
 
     void bvisit(const Basic &x)
     {
-        coeff_ = zero;
+        if (neq(*zero, *n_)) {
+            coeff_ = zero;
+            return;
+        }
+        if (has_symbol(x, *x_)) {
+            coeff_ = zero;
+        } else {
+            coeff_ = x.rcp_from_this();
+        }
     }
 
     RCP<const Basic> apply(const Basic &b)
@@ -291,6 +322,10 @@ inline set_basic atoms(const Basic &b)
 
 class CountOpsVisitor : public BaseVisitor<CountOpsVisitor>
 {
+protected:
+    std::unordered_map<RCP<const Basic>, unsigned, RCPBasicHash, RCPBasicKeyEq>
+        v;
+
 public:
     unsigned count = 0;
     void apply(const Basic &b);

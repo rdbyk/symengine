@@ -54,6 +54,7 @@ using SymEngine::dummy;
 using SymEngine::set_union;
 using SymEngine::imageset;
 using SymEngine::add;
+using SymEngine::Expression;
 #ifdef HAVE_SYMENGINE_FLINT
 using SymEngine::UIntPolyFlint;
 using SymEngine::URatPolyFlint;
@@ -114,7 +115,7 @@ TEST_CASE("linear and quadratic polynomials", "[Solve]")
     soln = solve(add(x, y), x);
     REQUIRE(eq(*soln, *finiteset({neg(y)})));
 
-    CHECK_THROWS_AS(solve_poly_linear({one}, reals), SymEngineException);
+    CHECK_THROWS_AS(solve_poly_linear({one}, reals), SymEngineException &);
 
     // Quadratic
     poly = add(sqx, one);
@@ -165,7 +166,7 @@ TEST_CASE("linear and quadratic polynomials", "[Solve]")
     REQUIRE(soln->__str__() == "{(-3/2)*b + (-1/2)*sqrt(-4*c + 9*b**2), "
                                "(-3/2)*b + (1/2)*sqrt(-4*c + 9*b**2)}");
 
-    CHECK_THROWS_AS(solve_poly_quadratic({one}, reals), SymEngineException);
+    CHECK_THROWS_AS(solve_poly_quadratic({one}, reals), SymEngineException &);
 
     auto onebyx = div(one, x);
     poly = add(onebyx, one);
@@ -239,8 +240,8 @@ TEST_CASE("cubic and quartic polynomials", "[Solve]")
     // -(-1/2 - 1/2*I*sqrt(3)) != 1/2 + 1/2*I*sqrt(3) ?
     // REQUIRE(eq(*soln, *finiteset({r1, r2, r3})));
 
-    CHECK_THROWS_AS(solve_poly_cubic({one}, reals), SymEngineException);
-    CHECK_THROWS_AS(solve_poly_quartic({one}, reals), SymEngineException);
+    CHECK_THROWS_AS(solve_poly_cubic({one}, reals), SymEngineException &);
+    CHECK_THROWS_AS(solve_poly_quartic({one}, reals), SymEngineException &);
 
     // Quartic
     poly = qx;
@@ -352,7 +353,8 @@ TEST_CASE("solve_poly", "[Solve]")
     soln = solve_poly(p2, x);
     REQUIRE(eq(*soln, *finiteset({neg(one), neg(integer(2))})));
 
-    auto P = uexpr_poly(x, {{0, integer(2)}, {1, integer(3)}, {2, integer(1)}});
+    auto P = uexpr_poly(
+        x, {{0, Expression(2)}, {1, Expression(3)}, {2, Expression(1)}});
     soln = solve_poly(P, x);
     REQUIRE(eq(*soln, *finiteset({neg(one), neg(integer(2))})));
 
@@ -444,6 +446,12 @@ TEST_CASE("linsolve", "[Solve]")
     REQUIRE(eq(*solns[1], *zero));
     REQUIRE(eq(*solns[2], *zero));
 
+    solns = linsolve({sub(x, integer(2)), sub(y, integer(3))}, {x, y});
+
+    REQUIRE(solns.size() == 2);
+    REQUIRE(eq(*solns[0], *integer(2)));
+    REQUIRE(eq(*solns[1], *integer(3)));
+
     auto a = symbol("a"), b = symbol("b"), c = symbol("c"), d = symbol("d"),
          e = symbol("e"), f = symbol("f");
     solns = linsolve(
@@ -464,7 +472,7 @@ TEST_CASE("linsolve", "[Solve]")
     CHECK_THROWS_AS(
         linsolve({Eq(y, mul({integer(4), x, x})), add({x, y, integer(-10)})},
                  {x, y}),
-        SymEngineException);
+        SymEngineException &);
 }
 
 TEST_CASE("linear_eqns_to_matrix", "[Solve]")

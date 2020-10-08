@@ -18,7 +18,7 @@ RealMPFR::RealMPFR(mpfr_class i) : i{std::move(i)}
 
 hash_t RealMPFR::__hash__() const
 {
-    hash_t seed = REAL_MPFR;
+    hash_t seed = SYMENGINE_REAL_MPFR;
     hash_combine_impl(seed, i.get_mpfr_t());
     return seed;
 }
@@ -1048,6 +1048,15 @@ class EvaluateMPFR : public Evaluate
         mpfr_srcptr x_ = down_cast<const RealMPFR &>(x).i.get_mpfr_t();
         integer_class i;
         mpfr_get_z(get_mpz_t(i), x_, MPFR_RNDU);
+        mp_demote(i);
+        return integer(std::move(i));
+    }
+    virtual RCP<const Basic> truncate(const Basic &x) const override
+    {
+        SYMENGINE_ASSERT(is_a<RealMPFR>(x))
+        mpfr_srcptr x_ = down_cast<const RealMPFR &>(x).i.get_mpfr_t();
+        integer_class i;
+        mpfr_get_z(get_mpz_t(i), x_, MPFR_RNDZ);
         mp_demote(i);
         return integer(std::move(i));
     }

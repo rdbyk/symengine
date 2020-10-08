@@ -89,15 +89,33 @@ using SymEngine::min;
 using SymEngine::min;
 using SymEngine::rcp_static_cast;
 using SymEngine::down_cast;
+using SymEngine::symbol;
+using SymEngine::sub;
+using SymEngine::EvalfDomain;
 
 TEST_CASE("evalf: real_double", "[evalf]")
 {
     RCP<const Basic> r1, r2;
     r1 = sin(integer(2));
-    r2 = evalf(*r1, 53, true);
-    REQUIRE(r2->get_type_code() == SymEngine::REAL_DOUBLE);
+    r2 = evalf(*r1, 53, EvalfDomain::Real);
+    REQUIRE(r2->get_type_code() == SymEngine::SYMENGINE_REAL_DOUBLE);
     double d1 = 0.909297;
     double d2 = (down_cast<const RealDouble &>(*r2)).as_double();
+    d1 = fabs(d1 - d2);
+    d2 = 0.000001;
+    REQUIRE(d1 < d2);
+}
+
+TEST_CASE("evalf: symbols", "[evalf]")
+{
+    RCP<const Basic> r1, r2, r3, x;
+    x = symbol("x");
+    r1 = add(add(sin(integer(2)), pi), x);
+    r2 = evalf(*r1, 53, EvalfDomain::Symbolic);
+    r3 = sub(r2, x);
+    REQUIRE(r3->get_type_code() == SymEngine::SYMENGINE_REAL_DOUBLE);
+    double d1 = 4.05089;
+    double d2 = (down_cast<const RealDouble &>(*r3)).as_double();
     d1 = fabs(d1 - d2);
     d2 = 0.000001;
     REQUIRE(d1 < d2);
@@ -111,12 +129,12 @@ TEST_CASE("evalf: real_mpfr", "[evalf]")
     r2 = integer(integer_class("6167950454"));
     r1 = sub(r1, r2);
 
-    r2 = evalf(*r1, 100, true);
-    REQUIRE(r2->get_type_code() == SymEngine::REAL_MPFR);
+    r2 = evalf(*r1, 100, EvalfDomain::Real);
+    REQUIRE(r2->get_type_code() == SymEngine::SYMENGINE_REAL_MPFR);
     REQUIRE(!(down_cast<const RealMPFR &>(*r2)).is_zero());
 
-    r2 = evalf(*r1, 60, true);
-    REQUIRE(r2->get_type_code() == SymEngine::REAL_MPFR);
+    r2 = evalf(*r1, 60, EvalfDomain::Real);
+    REQUIRE(r2->get_type_code() == SymEngine::SYMENGINE_REAL_MPFR);
     REQUIRE((down_cast<const RealMPFR &>(*r2)).is_zero());
 }
 #endif // HAVE_SYMENGINE_MPFR
@@ -132,11 +150,11 @@ TEST_CASE("evalf: complex_double", "[evalf]")
     r1 = mul(r1, r2);
     // r1 = (sin(4) + sin(3)i) * (sin(2) + sin(7)i)
 
-    r2 = evalf(*r1, 53, false);
-    REQUIRE(r2->get_type_code() == SymEngine::COMPLEX_DOUBLE);
+    r2 = evalf(*r1, 53, EvalfDomain::Complex);
+    REQUIRE(r2->get_type_code() == SymEngine::SYMENGINE_COMPLEX_DOUBLE);
 
     r1 = (down_cast<const ComplexDouble &>(*r2)).real_part();
-    REQUIRE(r1->get_type_code() == SymEngine::REAL_DOUBLE);
+    REQUIRE(r1->get_type_code() == SymEngine::SYMENGINE_REAL_DOUBLE);
 
     double d1 = (rcp_static_cast<const RealDouble>(
                      (down_cast<const ComplexDouble &>(*r2)).real_part()))
@@ -147,7 +165,7 @@ TEST_CASE("evalf: complex_double", "[evalf]")
     REQUIRE(d2 < d1);
 
     r1 = (down_cast<const ComplexDouble &>(*r2)).imaginary_part();
-    REQUIRE(r1->get_type_code() == SymEngine::REAL_DOUBLE);
+    REQUIRE(r1->get_type_code() == SymEngine::SYMENGINE_REAL_DOUBLE);
     d1 = (rcp_static_cast<const RealDouble>(
               (down_cast<const ComplexDouble &>(*r2)).imaginary_part()))
              ->as_double();
@@ -166,10 +184,10 @@ TEST_CASE("evalf: complex_mpc", "[evalf]")
     c1 = add(r1, mul(r1, I));
     c2 = add(r2, mul(r2, I));
 
-    r1 = evalf(*c1, 100, false);
+    r1 = evalf(*c1, 100, EvalfDomain::Complex);
 
     REQUIRE(static_cast<SymEngine::TypeID>(r1->get_type_code())
-            == SymEngine::COMPLEX_MPC);
+            == SymEngine::SYMENGINE_COMPLEX_MPC);
     REQUIRE(!(down_cast<const ComplexMPC &>(*r1)).is_zero());
 }
 #endif // HAVE_SYMENGINE_MPC

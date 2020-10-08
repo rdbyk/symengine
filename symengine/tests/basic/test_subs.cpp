@@ -25,6 +25,9 @@ using SymEngine::real_double;
 using SymEngine::kronecker_delta;
 using SymEngine::levi_civita;
 using SymEngine::msubs;
+using SymEngine::xreplace;
+using SymEngine::ssubs;
+using SymEngine::subs;
 using SymEngine::function_symbol;
 using SymEngine::gamma;
 using SymEngine::ComplexInf;
@@ -176,6 +179,11 @@ TEST_CASE("Mul: subs", "[subs]")
     r1 = div(one, mul(x, y));
     d[x] = zero;
     REQUIRE(eq(*r1->subs(d), *div(ComplexInf, y)));
+
+    d.clear();
+    r1 = mul(i2, x);
+    d[i2] = one;
+    REQUIRE(eq(*r1->subs(d), *x));
 }
 
 TEST_CASE("Pow: subs", "[subs]")
@@ -550,4 +558,39 @@ TEST_CASE("SSubs: subs", "[ssubs]")
 
     auto t = ssubs(f->diff(x), {{f, g}});
     REQUIRE(eq(*t, *g->diff(x)));
+}
+
+TEST_CASE("Cache: subs", "[subs]")
+{
+    RCP<const Symbol> x = symbol("x");
+    RCP<const Basic> f = pow(x, integer(2));
+    RCP<const Basic> g = add(f, sin(f));
+    RCP<const Basic> i3 = integer(3);
+    RCP<const Basic> s, t;
+
+    s = add(i3, sin(i3));
+
+    t = xreplace(g, {{f, i3}}, false);
+    REQUIRE(eq(*t, *s));
+
+    t = xreplace(g, {{f, i3}}, true);
+    REQUIRE(eq(*t, *s));
+
+    t = subs(g, {{f, i3}}, false);
+    REQUIRE(eq(*t, *s));
+
+    t = subs(g, {{f, i3}}, true);
+    REQUIRE(eq(*t, *s));
+
+    t = ssubs(g, {{f, i3}}, false);
+    REQUIRE(eq(*t, *s));
+
+    t = ssubs(g, {{f, i3}}, true);
+    REQUIRE(eq(*t, *s));
+
+    t = msubs(g, {{f, i3}}, false);
+    REQUIRE(eq(*t, *s));
+
+    t = msubs(g, {{f, i3}}, true);
+    REQUIRE(eq(*t, *s));
 }

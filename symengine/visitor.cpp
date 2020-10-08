@@ -51,7 +51,7 @@ void postorder_traversal_stop(const Basic &b, StopVisitor &v)
     b.accept(v);
 }
 
-bool has_symbol(const Basic &b, const Symbol &x)
+bool has_symbol(const Basic &b, const Basic &x)
 {
     // We are breaking a rule when using ptrFromRef() here, but since
     // HasSymbolVisitor is only instantiated and freed from here, the `x` can
@@ -134,6 +134,11 @@ set_basic free_symbols(const Basic &b)
     return visitor.apply(b);
 }
 
+set_basic function_symbols(const Basic &b)
+{
+    return atoms<FunctionSymbol>(b);
+}
+
 RCP<const Basic> TransformVisitor::apply(const RCP<const Basic> &x)
 {
     x->accept(*this);
@@ -210,7 +215,14 @@ void preorder_traversal_local_stop(const Basic &b, LocalStopVisitor &v)
 
 void CountOpsVisitor::apply(const Basic &b)
 {
-    b.accept(*this);
+    unsigned count_now = count;
+    auto it = v.find(b.rcp_from_this());
+    if (it == v.end()) {
+        b.accept(*this);
+        insert(v, b.rcp_from_this(), count - count_now);
+    } else {
+        count += it->second;
+    }
 }
 
 void CountOpsVisitor::bvisit(const Mul &x)

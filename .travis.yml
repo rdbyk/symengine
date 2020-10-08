@@ -7,11 +7,7 @@ os:
   - linux
   - osx
 dist: trusty
-osx_image: xcode6.4
-cache:
-  directories:
-  - $HOME/.ccache
-  - $HOME/conda_root
+osx_image: xcode7.3
 addons:
   apt:
     sources:
@@ -33,7 +29,7 @@ env:
   matrix:
   ## Out of tree builds (default):
   # Debug build (with BFD)
-  - BUILD_TYPE="Debug" WITH_BFD="yes" TRIGGER_FEEDSTOCK="yes"
+  - BUILD_TYPE="Debug" WITH_BFD="yes"
   # Debug build (with BFD and SYMENGINE_THREAD_SAFE)
   - BUILD_TYPE="Debug" WITH_BFD="yes" WITH_SYMENGINE_THREAD_SAFE="yes"
   # Debug build (with BFD, ECM, PRIMESIEVE and MPC)
@@ -41,7 +37,7 @@ env:
   # Debug build (with BFD, Flint and Arb and INTEGER_CLASS from flint)
   - BUILD_TYPE="Debug" WITH_BFD="yes" WITH_ARB="yes" INTEGER_CLASS="flint" WITH_MPC="yes" BUILD_DOXYGEN="yes" TEST_IN_TREE="yes"
   # Debug build (with BFD, MPFR and INTEGER_CLASS from gmpxx)
-  - BUILD_TYPE="Debug" WITH_BFD="yes" WITH_MPFR="yes" INTEGER_CLASS="gmpxx"
+  - BUILD_TYPE="Debug" WITH_SYMENGINE_RCP="yes" WITH_MPFR="yes" INTEGER_CLASS="gmpxx"
   # Debug build (with BFD and INTEGER_CLASS from boostmp)
   - BUILD_TYPE="Debug" WITH_BFD="yes" INTEGER_CLASS="boostmp"
   # Debug build shared lib (with BFD)
@@ -60,16 +56,19 @@ matrix:
     - compiler: clang
     - os: osx
   include:
-    - env: BUILD_TYPE="Debug" WITH_BFD="yes" WITH_LATEST_GCC="yes" WITH_COVERAGE="yes" WITH_MPC="yes" WITH_LLVM="5.0"
+    - env: BUILD_TYPE="Debug" WITH_BFD="yes" WITH_LATEST_GCC="yes" WITH_COVERAGE="yes" WITH_MPC="yes" WITH_LLVM="8.0" USE_GLIBCXX_DEBUG="yes"
       compiler: gcc
       os: linux
       addons:
         apt:
           sources:
           - ubuntu-toolchain-r-test
+          - llvm-toolchain-trusty-8
           packages:
+          - clang-8
+          - llvm-8-dev
           - binutils-dev
-          - g++-5
+          - g++-8
     - env: TEST_CLANG_FORMAT="yes"
       compiler: gcc
       os: linux
@@ -83,8 +82,8 @@ matrix:
       install:
         - echo "nothing to install"
       script:
-        - bin/travis_clang.sh
-    - env: BUILD_TYPE="Debug" WITH_BFD="yes" WITH_GCC_6="yes" WITH_PIRANHA="yes" MAKEFLAGS="-j2" BUILD_SHARED_LIBS="yes" USE_GLIBCXX_DEBUG="yes"
+        - bin/travis_clang_format.sh
+    - env: BUILD_TYPE="Debug" WITH_BFD="yes" WITH_GCC_6="yes" WITH_PIRANHA="yes" MAKEFLAGS="-j2" BUILD_SHARED_LIBS="yes"
       compiler: gcc
       os: linux
       addons:
@@ -114,18 +113,20 @@ matrix:
           packages:
           - binutils-dev
           - g++-4.8
-    - env: BUILD_TYPE="Debug" WITH_BFD="yes" WITH_LLVM="3.8" WITH_BENCHMARKS_NONIUS="yes"
+    - env: BUILD_TYPE="Debug" WITH_BFD="yes" WITH_LLVM="6.0" WITH_BENCHMARKS_NONIUS="yes"
       compiler: clang
       os: linux
       addons:
         apt:
           sources:
           - ubuntu-toolchain-r-test
+          - llvm-toolchain-trusty-6.0
           packages:
-          - clang
+          - clang-6.0
           - libstdc++-4.8-dev
           - libgmp-dev
           - binutils-dev
+          - llvm-6.0-dev
     - env: BUILD_TYPE="Release"
       compiler: clang
       os: linux
@@ -149,6 +150,49 @@ matrix:
     - env: BUILD_TYPE="Release"
       compiler: gcc
       os: osx
+    - env: BUILD_TYPE="Debug" WITH_SANITIZE="address" WITH_LLVM="7.0"
+      compiler: clang
+      os: linux
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - llvm-toolchain-trusty-7
+          packages:
+          - clang-7
+          - llvm-7-dev
+    - env: BUILD_TYPE="Debug" WITH_SANITIZE="undefined" WITH_LLVM="7.0"
+      compiler: clang
+      os: linux
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - llvm-toolchain-trusty-7
+          packages:
+          - clang-7
+          - llvm-7-dev
+    - env: BUILD_TYPE="Debug" WITH_SYMENGINE_RCP="yes" WITH_BFD="no" WITH_SANITIZE="memory" INTEGER_CLASS="boostmp"
+      compiler: clang
+      os: linux
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - llvm-toolchain-trusty-7
+          packages:
+          - clang-7
+          - llvm-7-dev
+    - env: CONDA_ENV_FILE="binder/environment.yml"
+      compiler: gcc
+      os: linux
+      script:
+        - bin/test_cling_notebook.sh
+    - env: CONDA_ENV_FILE="symengine/utilities/matchpycpp/environment.yml"
+      compiler: gcc
+      os: linux
+      script:
+        - bin/test_matchpycpp_gen_tests.sh
 
 before_install:
 - |
@@ -159,7 +203,6 @@ before_install:
 install:
   - source bin/install_travis.sh
 script:
-  - bin/travis_clang.sh
   - bin/test_travis.sh
   - bin/trigger_feedstock.sh
 notifications:

@@ -20,7 +20,7 @@ URatPSeriesPiranha::series(const RCP<const Basic> &t, const std::string &x,
 
 hash_t URatPSeriesPiranha::__hash__() const
 {
-    hash_t seed = URATPSERIESPIRANHA;
+    hash_t seed = SYMENGINE_URATPSERIESPIRANHA;
     hash_combine(seed, p_.hash());
     hash_combine(seed, var_);
     hash_combine(seed, degree_);
@@ -195,7 +195,7 @@ RCP<const UPSeriesPiranha> UPSeriesPiranha::series(const RCP<const Basic> &t,
 
 hash_t UPSeriesPiranha::__hash__() const
 {
-    hash_t seed = URATPSERIESPIRANHA;
+    hash_t seed = SYMENGINE_URATPSERIESPIRANHA;
     hash_combine(seed, p_.hash());
     hash_combine(seed, var_);
     hash_combine(seed, degree_);
@@ -288,7 +288,7 @@ Expression UPSeriesPiranha::find_cf(const p_expr &s, const p_expr &var,
 
 Expression UPSeriesPiranha::root(Expression &c, unsigned n)
 {
-    return pow_ex(c, 1 / Expression(n));
+    return SymEngine::pow(c, 1 / Expression(n));
 }
 
 p_expr UPSeriesPiranha::diff(const p_expr &s, const p_expr &var)
