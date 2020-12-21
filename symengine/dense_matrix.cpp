@@ -1,4 +1,5 @@
 #include <symengine/matrix.h>
+#include <symengine/number.h>
 #include <symengine/add.h>
 #include <symengine/functions.h>
 #include <symengine/pow.h>
@@ -6,6 +7,7 @@
 #include <symengine/symengine_exception.h>
 #include <symengine/polys/uexprpoly.h>
 #include <symengine/solve.h>
+#include <symengine/test_visitors.h>
 
 namespace SymEngine
 {
@@ -59,9 +61,277 @@ vec_basic DenseMatrix::as_vec_basic() const
     return m_;
 }
 
+RCP<const Basic> DenseMatrix::trace() const
+{
+    SYMENGINE_ASSERT(row_ == col_);
+    unsigned offset = 0;
+    vec_basic diag;
+    for (unsigned i = 0; i < row_; i++) {
+        diag.push_back(m_[offset]);
+        offset += row_ + 1;
+    }
+    auto sum = add(diag);
+    return sum;
+}
+
 unsigned DenseMatrix::rank() const
 {
     throw NotImplementedError("Not Implemented");
+}
+
+bool DenseMatrix::is_lower() const
+{
+    auto A = *this;
+    unsigned n = A.nrows();
+    for (unsigned i = 1; i < n; ++i) {
+        for (unsigned j = 0; j < i; ++j) {
+            if (not is_number_and_zero(*A.get(i, j))) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool DenseMatrix::is_upper() const
+{
+    auto A = *this;
+    unsigned n = A.nrows();
+    for (unsigned i = 0; i < n - 1; ++i) {
+        for (unsigned j = i + 1; j < n; ++j) {
+            if (not is_number_and_zero(*A.get(i, j))) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+tribool DenseMatrix::is_zero() const
+{
+    auto A = *this;
+    tribool cur = tribool::tritrue;
+    for (auto &e : m_) {
+        cur = and_tribool(cur, SymEngine::is_zero(*e));
+        if (is_false(cur)) {
+            return cur;
+        }
+    }
+    return cur;
+}
+
+tribool DenseMatrix::is_diagonal() const
+{
+    auto A = *this;
+    if (not A.is_square()) {
+        return tribool::trifalse;
+    }
+    unsigned ncols = A.ncols();
+    unsigned offset;
+    tribool cur = tribool::tritrue;
+    for (unsigned i = 0; i < ncols; i++) {
+        offset = i * ncols;
+        for (unsigned j = 0; j < ncols; j++) {
+            if (j != i) {
+                auto &e = m_[offset];
+                cur = and_tribool(cur, SymEngine::is_zero(*e));
+                if (is_false(cur)) {
+                    return cur;
+                }
+            }
+            offset++;
+        }
+    }
+    return cur;
+}
+
+tribool DenseMatrix::is_real() const
+{
+    auto A = *this;
+    tribool cur = tribool::tritrue;
+    for (auto &e : m_) {
+        cur = and_tribool(cur, SymEngine::is_real(*e));
+        if (is_false(cur)) {
+            return cur;
+        }
+    }
+    return cur;
+}
+
+tribool DenseMatrix::is_symmetric() const
+{
+    auto A = *this;
+    if (not A.is_square()) {
+        return tribool::trifalse;
+    }
+    unsigned ncols = A.ncols();
+    tribool cur = tribool::tritrue;
+    for (unsigned i = 0; i < ncols; i++) {
+        for (unsigned j = 0; j <= i; j++) {
+            if (j != i) {
+                auto &e = m_[i * ncols + j];
+                auto &e2 = m_[j * ncols + i];
+                cur = and_tribool(cur, SymEngine::is_zero(*sub(e, e2)));
+            }
+            if (is_false(cur)) {
+                return cur;
+            }
+        }
+    }
+    return cur;
+}
+
+tribool DenseMatrix::is_hermitian() const
+{
+    auto A = *this;
+    if (not A.is_square()) {
+        return tribool::trifalse;
+    }
+    unsigned ncols = A.ncols();
+    tribool cur = tribool::tritrue;
+    for (unsigned i = 0; i < ncols; i++) {
+        for (unsigned j = 0; j <= i; j++) {
+            auto &e = m_[i * ncols + j];
+            if (j != i) {
+                auto &e2 = m_[j * ncols + i];
+                cur = and_tribool(
+                    cur, SymEngine::is_zero(*sub(e, SymEngine::conjugate(e2))));
+            } else {
+                cur = and_tribool(cur, SymEngine::is_real(*e));
+            }
+            if (is_false(cur)) {
+                return cur;
+            }
+        }
+    }
+    return cur;
+}
+
+tribool DenseMatrix::is_weakly_diagonally_dominant() const
+{
+    auto A = *this;
+    if (not A.is_square()) {
+        return tribool::trifalse;
+    }
+
+    unsigned ncols = A.ncols();
+    RCP<const Basic> diag;
+    RCP<const Basic> sum;
+    tribool diagdom = tribool::tritrue;
+    for (unsigned i = 0; i < ncols; i++) {
+        sum = zero;
+        for (unsigned j = 0; j < ncols; j++) {
+            auto &e = m_[i * ncols + j];
+            if (i == j) {
+                diag = abs(e);
+            } else {
+                sum = add(sum, abs(e));
+            }
+        }
+        diagdom = and_tribool(diagdom, is_nonnegative(*sub(diag, sum)));
+        if (is_false(diagdom)) {
+            return diagdom;
+        }
+    }
+    return diagdom;
+}
+
+tribool DenseMatrix::is_strictly_diagonally_dominant() const
+{
+    auto A = *this;
+    if (not A.is_square()) {
+        return tribool::trifalse;
+    }
+
+    unsigned ncols = A.ncols();
+    RCP<const Basic> diag;
+    RCP<const Basic> sum;
+    tribool diagdom = tribool::tritrue;
+    for (unsigned i = 0; i < ncols; i++) {
+        sum = zero;
+        for (unsigned j = 0; j < ncols; j++) {
+            auto &e = m_[i * ncols + j];
+            if (i == j) {
+                diag = abs(e);
+            } else {
+                sum = add(sum, abs(e));
+            }
+        }
+        diagdom = and_tribool(diagdom, is_positive(*sub(diag, sum)));
+        if (is_false(diagdom)) {
+            return diagdom;
+        }
+    }
+    return diagdom;
+}
+
+tribool DenseMatrix::shortcut_to_posdef() const
+{
+    tribool is_diagonal_positive = tribool::tritrue;
+    unsigned offset = 0;
+    for (unsigned i = 0; i < row_; i++) {
+        is_diagonal_positive
+            = and_tribool(is_diagonal_positive, is_positive(*m_[offset]));
+        if (is_false(is_diagonal_positive))
+            return is_diagonal_positive;
+        offset += row_ + 1;
+    }
+    if (is_true(and_tribool(is_diagonal_positive,
+                            this->is_strictly_diagonally_dominant())))
+        return tribool::tritrue;
+    return tribool::indeterminate;
+}
+
+tribool DenseMatrix::is_positive_definite_GE()
+{
+    auto size = row_;
+    for (unsigned i = 0; i < size; i++) {
+        auto ispos = is_positive(*m_[i * size + i]);
+        if (!is_true(ispos))
+            return ispos;
+        for (unsigned j = i + 1; j < size; j++) {
+            for (unsigned k = i + 1; k < size; k++) {
+                m_[j * size + k] = sub(mul(m_[i * size + i], m_[j * size + k]),
+                                       mul(m_[j * size + i], m_[i * size + k]));
+            }
+        }
+    }
+    return tribool::tritrue;
+}
+
+tribool DenseMatrix::is_positive_definite() const
+{
+
+    auto A = *this;
+    std::unique_ptr<DenseMatrix> B;
+    const DenseMatrix *H;
+    if (!is_true(A.is_hermitian())) {
+        if (!A.is_square())
+            return tribool::trifalse;
+        DenseMatrix tmp1 = DenseMatrix(A.row_, A.col_);
+        B = std::unique_ptr<DenseMatrix>(new DenseMatrix(A.row_, A.col_));
+        A.conjugate_transpose(tmp1);
+        add_dense_dense(A, tmp1, *B.get());
+        H = B.get();
+    } else {
+        H = this;
+    }
+
+    tribool shortcut = H->shortcut_to_posdef();
+    if (!is_indeterminate(shortcut))
+        return shortcut;
+
+    if (!B) {
+        B = std::unique_ptr<DenseMatrix>(new DenseMatrix(A));
+    }
+    return B->is_positive_definite_GE();
+}
+
+tribool DenseMatrix::is_negative_definite() const
+{
+    auto res = DenseMatrix(row_, col_);
+    mul_dense_scalar(*this, integer(-1), res);
+    return res.is_positive_definite();
 }
 
 RCP<const Basic> DenseMatrix::det() const
@@ -831,7 +1101,7 @@ void pivoted_fraction_free_gauss_jordan_elimination(const DenseMatrix &A,
 unsigned pivot(DenseMatrix &B, unsigned r, unsigned c)
 {
     for (unsigned k = r; k < B.row_; k++) {
-        if (not is_zero(*(B.m_[k * B.col_ + c]))) {
+        if (!is_true(is_zero(*(B.m_[k * B.col_ + c])))) {
             return k;
         }
     }
@@ -849,7 +1119,7 @@ void reduced_row_echelon_form(const DenseMatrix &A, DenseMatrix &b,
     }
     unsigned row = 0;
     for (unsigned col = 0; col < b.col_ && row < b.row_; col++) {
-        if (is_zero(*b.get(row, col)))
+        if (is_true(is_zero(*b.get(row, col))))
             continue;
         pivot_cols.push_back(col);
         if (row == 0 and normalize_last) {
@@ -1170,7 +1440,7 @@ void pivoted_LU(const DenseMatrix &A, DenseMatrix &LU, permutelist &pl)
                 LU.m_[i * n + j] = sub(LU.m_[i * n + j],
                                        mul(LU.m_[i * n + k], LU.m_[k * n + j]));
             }
-            if (pivot == -1 and not is_zero(*LU.m_[i * n + j]))
+            if (pivot == -1 and !is_true(is_zero(*LU.m_[i * n + j])))
                 pivot = i;
         }
         if (pivot == -1)
@@ -1426,14 +1696,23 @@ RCP<const Basic> det_bareis(const DenseMatrix &A)
                            mul(mul(A.m_[1], A.m_[3]), A.m_[8])),
                        mul(mul(A.m_[0], A.m_[5]), A.m_[7])));
     } else {
+
+        if (A.is_lower() or A.is_upper()) {
+            RCP<const Basic> det = A.m_[0];
+            for (unsigned i = 1; i < n; ++i) {
+                det = mul(det, A.m_[i * n + i]);
+            }
+            return det;
+        }
+
         DenseMatrix B = DenseMatrix(n, n, A.m_);
         unsigned i, sign = 1;
         RCP<const Basic> d;
 
         for (unsigned k = 0; k < n - 1; k++) {
-            if (is_zero(*B.m_[k * n + k])) {
+            if (is_true(is_zero(*B.m_[k * n + k]))) {
                 for (i = k + 1; i < n; i++)
-                    if (not is_zero(*B.m_[i * n + k])) {
+                    if (!is_true(is_zero(*B.m_[i * n + k]))) {
                         row_exchange_dense(B, i, k);
                         sign *= -1;
                         break;
@@ -1680,6 +1959,17 @@ void cross(const DenseMatrix &A, const DenseMatrix &B, DenseMatrix &C)
 
 RCP<const Set> eigen_values(const DenseMatrix &A)
 {
+    unsigned n = A.nrows();
+    if (A.is_lower() or A.is_upper()) {
+        RCP<const Set> eigenvals = emptyset();
+        set_basic x;
+        for (unsigned i = 0; i < n; ++i) {
+            x.insert(A.get(i, i));
+        }
+        eigenvals = finiteset(x);
+        return eigenvals;
+    }
+
     DenseMatrix B = DenseMatrix(A.nrows() + 1, 1);
     char_poly(A, B);
     map_int_Expr coeffs;

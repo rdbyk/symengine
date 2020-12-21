@@ -135,10 +135,17 @@ inline bool is_a_Number(const Basic &b)
 }
 
 //! \return true if 'b' is a Number and is zero
-inline bool is_zero(const Basic &b)
+inline bool is_number_and_zero(const Basic &b)
 {
     return is_a_Number(b) and down_cast<const Number &>(b).is_zero();
 }
+
+tribool is_zero(const Basic &b);
+tribool is_positive(const Basic &b);
+tribool is_nonpositive(const Basic &b);
+tribool is_negative(const Basic &b);
+tribool is_nonnegative(const Basic &b);
+tribool is_real(const Basic &b);
 
 class NumberWrapper : public Number
 {

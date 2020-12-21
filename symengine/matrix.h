@@ -129,6 +129,19 @@ public:
         return col_;
     }
 
+    virtual bool is_lower() const;
+    virtual bool is_upper() const;
+    virtual tribool is_zero() const;
+    virtual tribool is_diagonal() const;
+    virtual tribool is_real() const;
+    virtual tribool is_symmetric() const;
+    virtual tribool is_hermitian() const;
+    virtual tribool is_weakly_diagonally_dominant() const;
+    virtual tribool is_strictly_diagonally_dominant() const;
+    virtual tribool is_positive_definite() const;
+    virtual tribool is_negative_definite() const;
+
+    RCP<const Basic> trace() const;
     virtual unsigned rank() const;
     virtual RCP<const Basic> det() const;
     virtual void inv(MatrixBase &result) const;
@@ -319,6 +332,9 @@ private:
     // Stores the dimension of the Matrix
     unsigned row_;
     unsigned col_;
+
+    tribool shortcut_to_posdef() const;
+    tribool is_positive_definite_GE();
 };
 
 // ----------------------------- Sparse Matrices -----------------------------//
